@@ -74,7 +74,7 @@ set -g status-right "\
 #[fg=colour240]│ \
 #[fg=colour222]CPU:#(~/.tmux/cpu.sh)%% \
 #[fg=colour114]MEM:#(~/.tmux/mem.sh)%% \
-#[fg=colour183]CL:#(bash ~/.tmux/claude-usage.sh)%% \
+#[fg=colour183]CL:#(bash ~/.tmux/claude-usage.sh) \
 #[fg=colour240]│ \
 #[fg=colour248]%H:%M %Z "
 
@@ -182,6 +182,7 @@ cat > "$TMUX_DIR/claude-usage.sh" << 'EOF'
 #!/usr/bin/env bash
 # Fetch Claude subscription usage percentage for tmux status bar.
 # Caches result for 60 seconds to avoid excessive API calls.
+# Red highlight: percentages >= 90%, dollar cost >= $150.
 
 CACHE_FILE="${TMPDIR:-/tmp}/claude-usage-cache"
 CACHE_TTL=60  # seconds
@@ -216,8 +217,25 @@ USAGE=$(curl -s --max-time 5 \
 import json, sys
 try:
     d = json.load(sys.stdin)
-    v = d.get('five_hour', {}).get('utilization')
-    print(f'{v:.0f}' if v is not None else '?')
+    s = d.get('five_hour', {}).get('utilization')
+    w = d.get('seven_day', {}).get('utilization')
+    ws = d.get('seven_day_sonnet', {})
+    ws = ws.get('utilization') if ws else None
+    ex = d.get('extra_usage') or {}
+    eu = ex.get('used_credits')
+    R = '#[fg=colour196]'
+    N = '#[fg=colour183]'
+    def pct(v):
+        if v is None: return '?'
+        n = int(v)
+        t = f'{n}%'
+        return f'{R}{t}{N}' if n >= 90 else t
+    def cost(v):
+        if v is None: return '-'
+        n = int(v / 100)
+        t = f'\${n}'
+        return f'{R}{t}{N}' if n >= 150 else t
+    print(f'{pct(s)}/{pct(w)}/{pct(ws)}/{cost(eu)}')
 except Exception:
     print('?')
 " 2>/dev/null)
