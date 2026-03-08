@@ -11,7 +11,7 @@ tmux source ~/.tmux.conf # reload if already in tmux
 
 ## What It Does
 
-- **Status bar**: project-colored badge, CPU/MEM/Claude usage %, hostname, clock
+- **Status bar**: project-colored badge, CPU/MEM/Claude usage (session%/weekly%/sonnet%/$extra), hostname, clock
 - **Window tabs**: orange highlight when Claude is idle in a background window
 - **Pane headers**: git branch (blue) or worktree name (orange), auto-updates when Claude switches worktrees
 - **Pane headers**: orange bg strip when Claude is idle in an inactive pane
