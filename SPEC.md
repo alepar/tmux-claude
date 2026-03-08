@@ -17,14 +17,15 @@ A tmux configuration and set of shell scripts that provide rich visual feedback 
 - Hash algorithm: `hash = (hash * 31 + charCode) % 65536`, then `hash % 15`
 
 **Right side**: System stats and clock
-- Format: `hostname │ CPU:XX% MEM:XX% CL:XX% │ HH:MM TZ`
-- CPU: sampled from `/proc/stat` (Linux) or `top -l` (macOS), 0.5s sample window
-- MEM: from `/proc/meminfo` (Linux) or `vm_stat` (macOS)
-- CL: Claude 5-hour rate limit utilization from `api.anthropic.com/api/oauth/usage`
-  - Authenticated via OAuth token from `~/.claude/.credentials.json`
-  - Requires `anthropic-beta: oauth-2025-04-20` header
+- Format: `hostname │ CPU:XX% MEM:XX% CL:S%/W%/Son%/$Extra │ HH:MM TZ`
+- CPU: sampled from `/proc/stat` (Linux) or `top -l` (macOS), 0.5s sample window. Red when >= 90%.
+- MEM: from `/proc/meminfo` (Linux) or `vm_stat` (macOS). Red when >= 90%.
+- CL: Claude usage from `api.anthropic.com/api/oauth/usage` — session%/weekly%/sonnet%/$extra
+  - Authenticated via OAuth token from macOS Keychain or `~/.claude/.credentials.json`
+  - Requires `User-Agent: claude-code/<version>` and `anthropic-beta: oauth-2025-04-20` headers
   - Cached for 60 seconds in `$TMPDIR/claude-usage-cache`
   - Falls back to `?` if credentials missing or API unreachable
+  - Utilization percentages turn red at >= 90%, extra cost turns red at >= $150
 - Refresh interval: 3 seconds (`status-interval 3`)
 
 ### 2. Window Tabs (Status Line)
@@ -182,10 +183,17 @@ The installer **merges** these hooks with any existing settings.json content (pr
 
 **Authentication**:
 ```
-Authorization: Bearer <token from ~/.claude/.credentials.json → claudeAiOauth.accessToken>
+Authorization: Bearer <token from macOS Keychain or ~/.claude/.credentials.json → claudeAiOauth.accessToken>
 Content-Type: application/json
+User-Agent: claude-code/<version>
 anthropic-beta: oauth-2025-04-20
 ```
+
+**Credential sources** (tried in order):
+1. macOS Keychain: `security find-generic-password -s "Claude Code-credentials" -w`
+2. File: `~/.claude/.credentials.json`
+
+**Note**: The `User-Agent` header must match `claude-code/<version>`. The API returns HTTP 429 without it.
 
 **Response**:
 ```json
@@ -201,7 +209,7 @@ anthropic-beta: oauth-2025-04-20
 }
 ```
 
-The status bar displays `five_hour.utilization` (the active rate limit window that determines if you'll get throttled).
+The status bar displays `five_hour.utilization`/`seven_day.utilization`/`seven_day_sonnet.utilization`/`extra_usage.used_credits` (converted to dollars).
 
 ## Known Limitations
 
