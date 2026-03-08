@@ -211,6 +211,7 @@ TOKEN=$(python3 -c "import json; print(json.load(open('$CREDS'))['claudeAiOauth'
 USAGE=$(curl -s --max-time 5 \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
+    -H "User-Agent: claude-code/$(claude --version 2>/dev/null || echo 0)" \
     -H "anthropic-beta: oauth-2025-04-20" \
     "https://api.anthropic.com/api/oauth/usage" 2>/dev/null \
   | python3 -c "
