@@ -105,16 +105,16 @@ echo "    Wrote $TMUX_CONF"
 # --------------------------------------------------------------------------
 cat > "$TMUX_DIR/cpu.sh" << 'EOF'
 #!/usr/bin/env bash
-# CPU usage percentage (macOS + Linux)
+# CPU usage percentage (macOS + Linux) — red when >= 90%
 case "$(uname)" in
     Darwin)
-        top -l 1 -n 0 2>/dev/null | awk '/CPU usage/ {printf "%.0f", 100 - $7}'
+        val=$(top -l 1 -n 0 2>/dev/null | awk '/CPU usage/ {printf "%.0f", 100 - $7}')
         ;;
     Linux)
         s1=$(head -1 /proc/stat)
         sleep 0.5
         s2=$(head -1 /proc/stat)
-        echo "$s1
+        val=$(echo "$s1
 $s2" | awk '
             NR==1 { for(i=2;i<=NF;i++) a[i]=$i }
             NR==2 {
@@ -124,10 +124,15 @@ $s2" | awk '
                 if (total>0) printf "%.0f", (total-idle)*100/total
                 else print "0"
             }
-        '
+        ')
         ;;
-    *) echo "?" ;;
+    *) val="?" ;;
 esac
+if [ "$val" != "?" ] && [ "$val" -ge 90 ] 2>/dev/null; then
+    printf '#[fg=colour196]%s' "$val"
+else
+    printf '%s' "$val"
+fi
 EOF
 chmod +x "$TMUX_DIR/cpu.sh"
 echo "    Wrote $TMUX_DIR/cpu.sh"
@@ -137,11 +142,11 @@ echo "    Wrote $TMUX_DIR/cpu.sh"
 # --------------------------------------------------------------------------
 cat > "$TMUX_DIR/mem.sh" << 'EOF'
 #!/usr/bin/env bash
-# Memory usage percentage (macOS + Linux)
+# Memory usage percentage (macOS + Linux) — red when >= 90%
 case "$(uname)" in
     Darwin)
         total_mem=$(sysctl -n hw.memsize 2>/dev/null)
-        vm_stat 2>/dev/null | awk -v total_mem="$total_mem" '
+        val=$(vm_stat 2>/dev/null | awk -v total_mem="$total_mem" '
             /page size of/      { page_size = $8 + 0 }
             /Pages active:/     { gsub(/[^0-9]/,"",$NF); active = $NF + 0 }
             /Pages wired/       { gsub(/[^0-9]/,"",$NF); wired = $NF + 0 }
@@ -154,13 +159,18 @@ case "$(uname)" in
                     else print "?"
                 } else print "?"
             }
-        '
+        ')
         ;;
     Linux)
-        awk '/MemTotal/ {t=$2} /MemAvailable/ {a=$2} END {printf "%.0f", (1-a/t)*100}' /proc/meminfo
+        val=$(awk '/MemTotal/ {t=$2} /MemAvailable/ {a=$2} END {printf "%.0f", (1-a/t)*100}' /proc/meminfo)
         ;;
-    *) echo "?" ;;
+    *) val="?" ;;
 esac
+if [ "$val" != "?" ] && [ "$val" -ge 90 ] 2>/dev/null; then
+    printf '#[fg=colour196]%s' "$val"
+else
+    printf '%s' "$val"
+fi
 EOF
 chmod +x "$TMUX_DIR/mem.sh"
 echo "    Wrote $TMUX_DIR/mem.sh"
