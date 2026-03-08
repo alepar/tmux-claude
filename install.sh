@@ -200,11 +200,17 @@ if [ -f "$CACHE_FILE" ]; then
     fi
 fi
 
-# Read OAuth token
-CREDS="$HOME/.claude/.credentials.json"
-[ -f "$CREDS" ] || { printf "?"; exit 0; }
-
-TOKEN=$(python3 -c "import json; print(json.load(open('$CREDS'))['claudeAiOauth']['accessToken'])" 2>/dev/null)
+# Read OAuth token (macOS Keychain first, then credentials file)
+TOKEN=""
+if [ "$(uname)" = "Darwin" ]; then
+    CREDS_JSON=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null)
+    [ -n "$CREDS_JSON" ] && TOKEN=$(printf '%s' "$CREDS_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['claudeAiOauth']['accessToken'])" 2>/dev/null)
+fi
+if [ -z "$TOKEN" ]; then
+    CREDS="$HOME/.claude/.credentials.json"
+    [ -f "$CREDS" ] || { printf "?"; exit 0; }
+    TOKEN=$(python3 -c "import json; print(json.load(open('$CREDS'))['claudeAiOauth']['accessToken'])" 2>/dev/null)
+fi
 [ -n "$TOKEN" ] || { printf "?"; exit 0; }
 
 # Call the usage API and parse in one pipeline
