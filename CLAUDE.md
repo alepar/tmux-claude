@@ -67,7 +67,7 @@ The installer adds these hooks to `~/.claude/settings.json` (merges with existin
 - **`after-select-pane` / `after-select-window` hooks**: Clear idle state when user focuses a pane (dismiss notification)
 - **`${TMPDIR:-/tmp}` everywhere**: macOS sets `$TMPDIR` to `/var/folders/...`
 - **Avoid `${VAR:-default}` in tmux hooks**: tmux interprets `${...}` as environment variable syntax and doesn't support `:-`. Use `T=$VAR; [ -z "$T" ] && T=default` pattern instead
-- **60s cache on usage API**: Avoids hammering `api.anthropic.com/api/oauth/usage` every 3s status refresh
+- **5min cache on usage API**: Avoids hammering `api.anthropic.com/api/oauth/usage` every 3s status refresh; exponential backoff (up to 60min) on rate-limit or server errors
 - **jq required for hooks**: Claude Code hook commands read JSON from stdin; cwd hook parses `tool_input.command`
 
 ## Platform Support

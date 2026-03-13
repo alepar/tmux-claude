@@ -181,20 +181,31 @@ echo "    Wrote $TMUX_DIR/mem.sh"
 cat > "$TMUX_DIR/claude-usage.sh" << 'EOF'
 #!/usr/bin/env bash
 # Fetch Claude subscription usage percentage for tmux status bar.
-# Caches result for 60 seconds to avoid excessive API calls.
+# Caches result for 5 minutes. On rate-limit/error, exponential backoff up to 60 min.
 # Red highlight: percentages >= 90%, dollar cost >= $150.
 
 CACHE_FILE="${TMPDIR:-/tmp}/claude-usage-cache"
-CACHE_TTL=60  # seconds
+BACKOFF_FILE="${TMPDIR:-/tmp}/claude-usage-backoff"
+BASE_TTL=300  # 5 minutes
+MAX_TTL=3600  # 60 minutes
+
+# Determine effective TTL (base or backoff)
+NOW=$(date +%s)
+EFFECTIVE_TTL=$BASE_TTL
+if [ -f "$BACKOFF_FILE" ]; then
+    EFFECTIVE_TTL=$(cat "$BACKOFF_FILE" 2>/dev/null)
+    [ -z "$EFFECTIVE_TTL" ] || [ "$EFFECTIVE_TTL" -lt "$BASE_TTL" ] 2>/dev/null && EFFECTIVE_TTL=$BASE_TTL
+    [ "$EFFECTIVE_TTL" -gt "$MAX_TTL" ] 2>/dev/null && EFFECTIVE_TTL=$MAX_TTL
+fi
 
 # Check cache freshness
 if [ -f "$CACHE_FILE" ]; then
     if [ "$(uname)" = "Darwin" ]; then
-        age=$(( $(date +%s) - $(stat -f%m "$CACHE_FILE") ))
+        age=$(( NOW - $(stat -f%m "$CACHE_FILE") ))
     else
-        age=$(( $(date +%s) - $(stat -c%Y "$CACHE_FILE") ))
+        age=$(( NOW - $(stat -c%Y "$CACHE_FILE") ))
     fi
-    if [ "$age" -lt "$CACHE_TTL" ]; then
+    if [ "$age" -lt "$EFFECTIVE_TTL" ]; then
         cat "$CACHE_FILE"
         exit 0
     fi
@@ -213,14 +224,31 @@ if [ -z "$TOKEN" ]; then
 fi
 [ -n "$TOKEN" ] || { printf "?"; exit 0; }
 
-# Call the usage API and parse in one pipeline
-USAGE=$(curl -s --max-time 5 \
+# Call the usage API, capture both body and HTTP status
+HTTP_RESPONSE=$(curl -s --max-time 5 -w "\n%{http_code}" \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -H "User-Agent: claude-code/$(claude --version 2>/dev/null || echo 0)" \
     -H "anthropic-beta: oauth-2025-04-20" \
-    "https://api.anthropic.com/api/oauth/usage" 2>/dev/null \
-  | python3 -c "
+    "https://api.anthropic.com/api/oauth/usage" 2>/dev/null)
+
+HTTP_CODE=$(printf '%s' "$HTTP_RESPONSE" | tail -1)
+HTTP_BODY=$(printf '%s' "$HTTP_RESPONSE" | sed '$d')
+
+# Check for rate limiting or server errors
+if [ "$HTTP_CODE" = "429" ] || [ "${HTTP_CODE:-0}" -ge 500 ] 2>/dev/null; then
+    # Exponential backoff: double the current TTL (start from BASE_TTL)
+    NEXT_TTL=$(( EFFECTIVE_TTL * 2 ))
+    [ "$NEXT_TTL" -gt "$MAX_TTL" ] && NEXT_TTL=$MAX_TTL
+    printf '%s' "$NEXT_TTL" > "$BACKOFF_FILE"
+    # Touch cache so it won't retry until backoff expires
+    [ -f "$CACHE_FILE" ] && touch "$CACHE_FILE" || printf '?' > "$CACHE_FILE"
+    cat "$CACHE_FILE"
+    exit 0
+fi
+
+# Parse response
+USAGE=$(printf '%s' "$HTTP_BODY" | python3 -c "
 import json, sys
 try:
     d = json.load(sys.stdin)
@@ -247,7 +275,17 @@ except Exception:
     print('?')
 " 2>/dev/null)
 
-[ -n "$USAGE" ] || USAGE="?"
+if [ -z "$USAGE" ] || [ "$USAGE" = "?" ]; then
+    # Parse failure — treat as error, apply backoff
+    NEXT_TTL=$(( EFFECTIVE_TTL * 2 ))
+    [ "$NEXT_TTL" -gt "$MAX_TTL" ] && NEXT_TTL=$MAX_TTL
+    printf '%s' "$NEXT_TTL" > "$BACKOFF_FILE"
+    USAGE="?"
+else
+    # Success — clear backoff
+    rm -f "$BACKOFF_FILE"
+fi
+
 printf '%s' "$USAGE" > "$CACHE_FILE"
 printf '%s' "$USAGE"
 EOF
