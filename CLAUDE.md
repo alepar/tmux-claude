@@ -12,7 +12,7 @@ tmux source ~/.tmux.conf # reload if already in tmux
 ## What It Does
 
 - **Status bar**: project-colored badge, CPU/MEM/Claude usage (session%/weekly%/sonnet%/$extra), hostname, clock
-- **Claude status line**: 20-segment context bar (green → yellow → red as context fills) + remaining tokens, e.g. `████░░░░░░░░░░░░░░░░ | remaining: 920k/1m`
+- **Claude status line**: 20-segment context bar (green → yellow → red as context fills) + remaining tokens + model name, e.g. `████░░░░░░░░░░░░░░░░ | remaining: 920k/1m | Fable`
 - **Window tabs**: orange highlight when Claude is idle in a background window
 - **Pane headers**: git branch (blue) or worktree name (orange), auto-updates when Claude switches worktrees
 - **Pane headers**: orange bg strip when Claude is idle in an inactive pane

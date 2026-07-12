@@ -10,10 +10,10 @@ Single install script deploys everything.
 
 **Status bar** — project-colored session badge, CPU/MEM usage, Claude API usage (session%/weekly%/sonnet%/$extra), hostname, and clock. CPU, MEM, and usage stats turn red when they hit critical thresholds.
 
-**Claude status line** — a 20-segment context bar that shifts green → yellow → red as the context window fills, alongside the remaining token count:
+**Claude status line** — a 20-segment context bar that shifts green → yellow → red as the context window fills, alongside the remaining token count and current model:
 
 ```
-████░░░░░░░░░░░░░░░░ | remaining: 920k/1m
+████░░░░░░░░░░░░░░░░ | remaining: 920k/1m | Fable
 ```
 
 **Idle notifications** — when Claude finishes working and is waiting for input in a background pane or window, you'll see it highlighted in orange. Focusing the pane dismisses the notification, just like reading a chat message.

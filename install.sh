@@ -321,13 +321,15 @@ cat > "$TMUX_DIR/claude-statusline.sh" << 'EOF'
 # Claude Code status line: 20-segment context bar + remaining tokens.
 # Reads the JSON payload Claude sends on stdin, locates the latest assistant
 # usage record in the session transcript, and prints e.g.
-#   ████░░░░░░░░░░░░░░░░ | remaining: 920k/1m
+#   ████░░░░░░░░░░░░░░░░ | remaining: 920k/1m | Fable
 # Bar color: green < 60% used, yellow < 85%, red above.
 # Dependencies: jq, awk.
 
 input=$(cat)
 transcript=$(printf '%s' "$input" | jq -r '.transcript_path // empty')
 model_id=$(printf '%s' "$input" | jq -r '.model.id // empty')
+model_name=$(printf '%s' "$input" | jq -r '.model.display_name // empty')
+[ -z "$model_name" ] && model_name=$model_id
 exceeds_200k=$(printf '%s' "$input" | jq -r '.exceeds_200k_tokens // false')
 
 tokens=0
@@ -405,6 +407,7 @@ human() {
 printf "%s%s%s%s%s | remaining: %s/%s" \
     "$color" "$filled_part" "$dim" "$empty_part" "$reset" \
     "$(human "$remaining")" "$(human "$window")"
+[ -n "$model_name" ] && printf " | %s" "$model_name"
 EOF
 chmod +x "$TMUX_DIR/claude-statusline.sh"
 echo "    Wrote $TMUX_DIR/claude-statusline.sh"
