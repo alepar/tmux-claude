@@ -12,6 +12,7 @@ tmux source ~/.tmux.conf # reload if already in tmux
 ## What It Does
 
 - **Status bar**: project-colored badge, CPU/MEM/Claude usage (session%/weekly%/sonnet%/$extra), hostname, clock
+- **Claude status line**: 20-segment context bar (green → yellow → red as context fills) + remaining tokens, e.g. `████░░░░░░░░░░░░░░░░ | remaining: 920k/1m`
 - **Window tabs**: orange highlight when Claude is idle in a background window
 - **Pane headers**: git branch (blue) or worktree name (orange), auto-updates when Claude switches worktrees
 - **Pane headers**: orange bg strip when Claude is idle in an inactive pane
@@ -40,11 +41,12 @@ tmux `pane-border-format` runs a shell script per pane, but format conditionals 
 | `~/.tmux/pane-label.sh` | Pane border labels: git info + idle detection |
 | `~/.tmux/claude-cwd-hook.sh` | PostToolUse hook: tracks `cd` commands |
 | `~/.tmux/claude-usage.sh` | Fetches Claude API usage (5h window), 60s cache |
+| `~/.tmux/claude-statusline.sh` | Claude Code status line: context bar + remaining tokens |
 | `~/.tmux/cleanup-markers.sh` | Removes markers for dead panes |
 | `~/.tmux/project-color.sh` | Session name → deterministic color badge |
 | `~/.tmux/cpu.sh` | CPU usage % (macOS + Linux) |
 | `~/.tmux/mem.sh` | Memory usage % (macOS + Linux) |
-| `~/.claude/settings.json` | Claude Code hooks (merged, not overwritten) |
+| `~/.claude/settings.json` | Claude Code hooks + `statusLine` (merged, not overwritten) |
 
 ## Claude Code Hooks
 
@@ -69,6 +71,7 @@ The installer adds these hooks to `~/.claude/settings.json` (merges with existin
 - **Avoid `${VAR:-default}` in tmux hooks**: tmux interprets `${...}` as environment variable syntax and doesn't support `:-`. Use `T=$VAR; [ -z "$T" ] && T=default` pattern instead
 - **5min cache on usage API**: Avoids hammering `api.anthropic.com/api/oauth/usage` every 3s status refresh; exponential backoff (up to 60min) on rate-limit or server errors
 - **jq required for hooks**: Claude Code hook commands read JSON from stdin; cwd hook parses `tool_input.command`
+- **Context window is marker-driven, not name-driven**: `claude-statusline.sh` reads the 1M tier from the `[1m]` suffix in `model.id` (plus the `exceeds_200k_tokens` flag), so new models work without a code change. Model-family matching (haiku → 200k, fable/sonnet-5 → 1M) is only a fallback when no marker is present — don't replace this with a model-name lookup table
 
 ## Platform Support
 

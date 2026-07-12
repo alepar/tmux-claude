@@ -314,6 +314,102 @@ chmod +x "$TMUX_DIR/claude-usage.sh"
 echo "    Wrote $TMUX_DIR/claude-usage.sh"
 
 # --------------------------------------------------------------------------
+# ~/.tmux/claude-statusline.sh
+# --------------------------------------------------------------------------
+cat > "$TMUX_DIR/claude-statusline.sh" << 'EOF'
+#!/bin/bash
+# Claude Code status line: 20-segment context bar + remaining tokens.
+# Reads the JSON payload Claude sends on stdin, locates the latest assistant
+# usage record in the session transcript, and prints e.g.
+#   ████░░░░░░░░░░░░░░░░ | remaining: 920k/1m
+# Bar color: green < 60% used, yellow < 85%, red above.
+# Dependencies: jq, awk.
+
+input=$(cat)
+transcript=$(printf '%s' "$input" | jq -r '.transcript_path // empty')
+model_id=$(printf '%s' "$input" | jq -r '.model.id // empty')
+exceeds_200k=$(printf '%s' "$input" | jq -r '.exceeds_200k_tokens // false')
+
+tokens=0
+if [ -n "$transcript" ] && [ -f "$transcript" ]; then
+    last=$(grep -F '"usage"' "$transcript" 2>/dev/null | tail -n 1)
+    if [ -n "$last" ]; then
+        tokens=$(printf '%s' "$last" | jq -r '
+          (.message.usage.input_tokens // 0) +
+          (.message.usage.cache_read_input_tokens // 0) +
+          (.message.usage.cache_creation_input_tokens // 0)
+        ' 2>/dev/null)
+        [ -z "$tokens" ] && tokens=0
+    fi
+fi
+
+# Derive window. Claude Code marks the 1M tier in model.id ("[1m]"); the model
+# family is only a fallback for when no marker is present. Haiku is 200k-only.
+window=200000
+case "$model_id" in
+    *"[1m]"*|*-1m|*-1m-*)        window=1000000 ;;
+    *haiku*)                     window=200000 ;;
+    *fable*|*sonnet-5*|*mythos*) window=1000000 ;;
+esac
+if [ "$window" -lt 1000000 ] && { [ "$exceeds_200k" = "true" ] || [ "$tokens" -gt 200000 ]; }; then
+    window=1000000
+fi
+
+[ "$tokens" -gt "$window" ] && tokens=$window
+remaining=$((window - tokens))
+
+# Bar: 20 segments, filled proportional to usage (at least 1 once any tokens used).
+SEGMENTS=20
+filled=$(awk -v t="$tokens" -v w="$window" -v n="$SEGMENTS" 'BEGIN {
+    f = int((t / w) * n + 0.5)
+    if (t > 0 && f < 1) f = 1
+    if (f > n) f = n
+    print f
+}')
+
+pct=$(awk -v t="$tokens" -v w="$window" 'BEGIN { printf "%d", (t/w)*100 }')
+if   [ "$pct" -ge 85 ]; then color=$'\033[31m'   # red
+elif [ "$pct" -ge 60 ]; then color=$'\033[33m'   # yellow
+else                         color=$'\033[32m'   # green
+fi
+dim=$'\033[90m'
+reset=$'\033[0m'
+
+# Built segment-by-segment: substring slicing on multibyte blocks is locale-dependent.
+filled_part=""
+empty_part=""
+i=0
+while [ "$i" -lt "$SEGMENTS" ]; do
+    if [ "$i" -lt "$filled" ]; then
+        filled_part="${filled_part}█"
+    else
+        empty_part="${empty_part}░"
+    fi
+    i=$((i + 1))
+done
+
+human() {
+    awk -v n="$1" 'BEGIN {
+        if (n >= 1000000) {
+            s = sprintf("%.1f", n / 1000000)
+            sub(/\.0$/, "", s)
+            printf "%sm", s
+        } else if (n >= 1000) {
+            printf "%dk", int(n / 1000 + 0.5)
+        } else {
+            printf "%d", n
+        }
+    }'
+}
+
+printf "%s%s%s%s%s | remaining: %s/%s" \
+    "$color" "$filled_part" "$dim" "$empty_part" "$reset" \
+    "$(human "$remaining")" "$(human "$window")"
+EOF
+chmod +x "$TMUX_DIR/claude-statusline.sh"
+echo "    Wrote $TMUX_DIR/claude-statusline.sh"
+
+# --------------------------------------------------------------------------
 # ~/.tmux/project-color.sh
 # --------------------------------------------------------------------------
 cat > "$TMUX_DIR/project-color.sh" << 'EOF'
@@ -514,16 +610,24 @@ if command -v jq &>/dev/null && [ -d "$HOME/.claude" ]; then
 HOOKS_EOF
 )
 
+    STATUSLINE_JSON='{"type": "command", "command": "bash ~/.tmux/claude-statusline.sh"}'
+
     if [ -f "$CLAUDE_SETTINGS" ]; then
         # Merge hooks into existing settings (replace hooks section entirely)
         existing=$(cat "$CLAUDE_SETTINGS")
-        updated=$(printf '%s' "$existing" | jq --argjson hooks "$HOOKS_JSON" '.hooks = ($hooks + (.hooks // {} | to_entries | map(select(.key as $k | ($hooks | keys | index($k)) == null)) | from_entries))')
+        updated=$(printf '%s' "$existing" | jq \
+            --argjson hooks "$HOOKS_JSON" \
+            --argjson statusline "$STATUSLINE_JSON" \
+            '.hooks = ($hooks + (.hooks // {} | to_entries | map(select(.key as $k | ($hooks | keys | index($k)) == null)) | from_entries))
+             | .statusLine = $statusline')
         printf '%s\n' "$updated" > "$CLAUDE_SETTINGS"
-        echo "    Updated $CLAUDE_SETTINGS with tmux hooks"
+        echo "    Updated $CLAUDE_SETTINGS with tmux hooks + status line"
     else
         # Create new settings file
-        printf '%s\n' "$HOOKS_JSON" | jq '{hooks: .}' > "$CLAUDE_SETTINGS"
-        echo "    Created $CLAUDE_SETTINGS with tmux hooks"
+        printf '%s\n' "$HOOKS_JSON" | jq \
+            --argjson statusline "$STATUSLINE_JSON" \
+            '{hooks: ., statusLine: $statusline}' > "$CLAUDE_SETTINGS"
+        echo "    Created $CLAUDE_SETTINGS with tmux hooks + status line"
     fi
 else
     echo ""

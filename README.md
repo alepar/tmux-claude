@@ -10,6 +10,12 @@ Single install script deploys everything.
 
 **Status bar** — project-colored session badge, CPU/MEM usage, Claude API usage (session%/weekly%/sonnet%/$extra), hostname, and clock. CPU, MEM, and usage stats turn red when they hit critical thresholds.
 
+**Claude status line** — a 20-segment context bar that shifts green → yellow → red as the context window fills, alongside the remaining token count:
+
+```
+████░░░░░░░░░░░░░░░░ | remaining: 920k/1m
+```
+
 **Idle notifications** — when Claude finishes working and is waiting for input in a background pane or window, you'll see it highlighted in orange. Focusing the pane dismisses the notification, just like reading a chat message.
 
 **Pane headers** — each pane shows the current git branch (blue) or worktree name (orange). Automatically updates when Claude switches directories or worktrees.
@@ -47,6 +53,7 @@ The installer backs up your existing `~/.tmux.conf` before overwriting.
 | `~/.tmux.conf` | Main tmux config |
 | `~/.tmux/pane-label.sh` | Pane headers: git branch/worktree + idle indicator |
 | `~/.tmux/claude-usage.sh` | Claude API usage with 60s cache |
+| `~/.tmux/claude-statusline.sh` | Claude Code status line: context bar + remaining tokens |
 | `~/.tmux/claude-cwd-hook.sh` | Tracks Claude's working directory |
 | `~/.tmux/cleanup-markers.sh` | Cleans up stale marker files |
 | `~/.tmux/project-color.sh` | Session name to deterministic color badge |
