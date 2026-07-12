@@ -183,6 +183,7 @@ cat > "$TMUX_DIR/claude-usage.sh" << 'EOF'
 # Fetch Claude subscription usage percentage for tmux status bar.
 # Caches result for 5 minutes. On rate-limit/error, exponential backoff up to 60 min.
 # Red highlight: percentages >= 90%, dollar cost >= $150.
+# Dependencies: curl, bash, grep — no python3/jq/node required.
 
 CACHE_FILE="${TMPDIR:-/tmp}/claude-usage-cache"
 BACKOFF_FILE="${TMPDIR:-/tmp}/claude-usage-backoff"
@@ -215,12 +216,12 @@ fi
 TOKEN=""
 if [ "$(uname)" = "Darwin" ]; then
     CREDS_JSON=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null)
-    [ -n "$CREDS_JSON" ] && TOKEN=$(printf '%s' "$CREDS_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['claudeAiOauth']['accessToken'])" 2>/dev/null)
+    [ -n "$CREDS_JSON" ] && TOKEN=$(printf '%s' "$CREDS_JSON" | grep -o '"accessToken":"[^"]*"' | head -1 | cut -d'"' -f4)
 fi
 if [ -z "$TOKEN" ]; then
     CREDS="$HOME/.claude/.credentials.json"
     [ -f "$CREDS" ] || { printf "?"; exit 0; }
-    TOKEN=$(python3 -c "import json; print(json.load(open('$CREDS'))['claudeAiOauth']['accessToken'])" 2>/dev/null)
+    TOKEN=$(grep -o '"accessToken":"[^"]*"' "$CREDS" | head -1 | cut -d'"' -f4)
 fi
 [ -n "$TOKEN" ] || { printf "?"; exit 0; }
 
@@ -247,42 +248,62 @@ if [ "$HTTP_CODE" = "429" ] || [ "${HTTP_CODE:-0}" -ge 500 ] 2>/dev/null; then
     exit 0
 fi
 
-# Parse response
-USAGE=$(printf '%s' "$HTTP_BODY" | python3 -c "
-import json, sys
-try:
-    d = json.load(sys.stdin)
-    s = d.get('five_hour', {}).get('utilization')
-    w = d.get('seven_day', {}).get('utilization')
-    ws = d.get('seven_day_sonnet', {})
-    ws = ws.get('utilization') if ws else None
-    ex = d.get('extra_usage') or {}
-    eu = ex.get('used_credits')
-    R = '#[fg=colour196]'
-    N = '#[fg=colour183]'
-    def pct(v):
-        if v is None: return '?'
-        n = int(v)
-        t = f'{n}%'
-        return f'{R}{t}{N}' if n >= 90 else t
-    def cost(v):
-        if v is None: return '-'
-        n = int(v / 100)
-        t = f'\${n}'
-        return f'{R}{t}{N}' if n >= 150 else t
-    print(f'{pct(s)}/{pct(w)}/{pct(ws)}/{cost(eu)}')
-except Exception:
-    print('?')
-" 2>/dev/null)
+# --- Pure-bash JSON helpers (no python3/jq needed) ---
 
-if [ -z "$USAGE" ] || [ "$USAGE" = "?" ]; then
-    # Parse failure — treat as error, apply backoff
+# Extract utilization from a named JSON section: "key":{"utilization":N,...}
+# Won't match "key_suffix" thanks to the closing quote before colon
+json_util() {
+    local section
+    section=$(printf '%s' "$2" | grep -o "\"$1\":{[^}]*}" | head -1)
+    [ -n "$section" ] && printf '%s' "$section" | grep -o '"utilization":[0-9.]*' | head -1 | cut -d: -f2
+}
+
+# Extract a top-level numeric value: "key":N
+json_num() {
+    printf '%s' "$2" | grep -o "\"$1\":[0-9.]*" | head -1 | cut -d: -f2
+}
+
+# Format percentage with red highlight for >= 90%
+fmt_pct() {
+    local v="$1"
+    if [ -z "$v" ]; then printf '?'; return; fi
+    local n=${v%%.*}
+    if [ "$n" -ge 90 ] 2>/dev/null; then
+        printf '#[fg=colour196]%s%%#[fg=colour183]' "$n"
+    else
+        printf '%s%%' "$n"
+    fi
+}
+
+# Format dollar cost with red highlight for >= $150
+fmt_cost() {
+    local v="$1"
+    if [ -z "$v" ]; then printf -- '-'; return; fi
+    local cents=${v%%.*}
+    local dollars=$(( cents / 100 ))
+    if [ "$dollars" -ge 150 ] 2>/dev/null; then
+        printf '#[fg=colour196]$%s#[fg=colour183]' "$dollars"
+    else
+        printf '$%s' "$dollars"
+    fi
+}
+
+# Parse response fields
+S=$(json_util "five_hour" "$HTTP_BODY")
+W=$(json_util "seven_day" "$HTTP_BODY")
+WS=$(json_util "seven_day_sonnet" "$HTTP_BODY")
+EU=$(json_num "used_credits" "$HTTP_BODY")
+
+USAGE="$(fmt_pct "$S")/$(fmt_pct "$W")/$(fmt_pct "$WS")/$(fmt_cost "$EU")"
+
+if [ "$USAGE" = "?/?/?/-" ]; then
+    # Total parse failure — treat as error, apply backoff
     NEXT_TTL=$(( EFFECTIVE_TTL * 2 ))
     [ "$NEXT_TTL" -gt "$MAX_TTL" ] && NEXT_TTL=$MAX_TTL
     printf '%s' "$NEXT_TTL" > "$BACKOFF_FILE"
     USAGE="?"
 else
-    # Success — clear backoff
+    # Success (even partial) — clear backoff
     rm -f "$BACKOFF_FILE"
 fi
 

@@ -80,7 +80,7 @@ The installer adds these hooks to `~/.claude/settings.json` (merges with existin
 - `tmux` (tested with 3.5+)
 - `git` (for branch/worktree detection)
 - `bash` (all scripts use bash)
-- `curl` + `python3` (for Claude usage API)
+- `curl` (for Claude usage API)
 - `jq` (optional, for Claude Code hooks installation and cwd tracking)
 
 ## Colors

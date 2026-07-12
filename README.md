@@ -21,7 +21,7 @@ Single install script deploys everything.
 - `tmux` 3.5+
 - `git`
 - `bash`
-- `curl` + `python3` (for Claude usage API)
+- `curl` (for Claude usage API)
 - `jq` (for Claude Code hooks — idle detection, cwd tracking)
 
 ## Install
