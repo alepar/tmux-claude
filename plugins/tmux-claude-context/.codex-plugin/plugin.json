@@ -1,0 +1,22 @@
+{
+  "name": "tmux-claude-context",
+  "version": "0.1.0",
+  "description": "Refreshes tmux pane context markers from Codex lifecycle events.",
+  "author": {
+    "name": "Alexey Parfenov"
+  },
+  "license": "MIT",
+  "interface": {
+    "displayName": "tmux-claude Context",
+    "shortDescription": "Codex context markers for tmux panes.",
+    "longDescription": "Uses Codex lifecycle events to refresh per-pane context markers for tmux-claude.",
+    "developerName": "Alexey Parfenov",
+    "category": "Productivity",
+    "capabilities": [
+      "Hooks"
+    ],
+    "defaultPrompt": [
+      "Install tmux-claude context hooks."
+    ]
+  }
+}

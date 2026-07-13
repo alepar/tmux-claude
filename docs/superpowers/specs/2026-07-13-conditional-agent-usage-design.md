@@ -20,7 +20,7 @@ The selected source is a pane-keyed Codex marker file refreshed from hooks in a 
 
 ### Plugin installation
 
-The repository provides a local marketplace and a single plugin. When Codex is installed, `install.sh` registers that marketplace and installs or refreshes the plugin using the Codex CLI. This is intentionally a user-level configuration change, equivalent in scope to the existing Claude settings integration, and is skipped with a clear message if Codex is unavailable. The plugin contains only lifecycle-hook declarations; all marker parsing and rendering remains in `~/.tmux` scripts so the plugin has one responsibility.
+The repository provides a local marketplace and a single plugin. When Codex and `jq` are installed, `install.sh` registers that marketplace and installs or enables the bundled plugin using the Codex CLI. This is intentionally a user-level configuration change, equivalent in scope to the existing Claude settings integration, and is skipped with a clear message if either prerequisite is unavailable. The plugin contains only lifecycle-hook declarations; all marker parsing and rendering remains in `~/.tmux` scripts so the plugin has one responsibility. Plugin-version changes are release metadata and are not mutated by the installer.
 
 ### Codex percentage
 
@@ -50,3 +50,5 @@ Tests will exercise token-record parsing, rounding and color boundaries, active-
 ## Post-Implementation Notes
 
 *As this design is implemented and iterated on — bug fixes, adjustments, anything that diverged from the assumptions above — append a dated note here, whether or not a formal debugging skill was used.*
+
+**Changes vs. original design (2026-07-13):** Codex requires the local marketplace manifest at `.claude-plugin/marketplace.json`, requires `jq` for the installed hook helper, and caches local plugins by manifest version. The installer therefore installs/enables the bundled version rather than rewriting repository metadata to force a refresh; a future hook-definition release must intentionally bump the plugin version/cachebuster before reinstalling.

@@ -1,6 +1,6 @@
 # tmux-claude
 
-A tmux setup optimized for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) workflows. Gives you at-a-glance visibility into Claude's activity across multiple panes and windows — idle notifications, git context, API usage, and system stats.
+A tmux setup aware of [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and Codex workflows. It provides at-a-glance agent activity, git context, usage, and system stats across multiple panes and windows.
 
 Single install script deploys everything.
 
@@ -8,7 +8,7 @@ Single install script deploys everything.
 
 ## Features
 
-**Status bar** — project-colored session badge, CPU/MEM usage, Claude API usage (session%/weekly%/sonnet%/$extra), hostname, and clock. CPU, MEM, and usage stats turn red when they hit critical thresholds.
+**Status bar** — project-colored session badge, CPU/MEM usage, active-agent usage, hostname, and clock. The active pane determines the agent field: `CL:` plus the existing Claude subscription usage for Claude, colored `CTX:<integer>%` for a tracked Codex pane, or nothing for a shell or unknown process. Codex is green below 60%, yellow through 84%, and red at 85% or above.
 
 **Claude status line** — a 20-segment context bar that shifts green → yellow → red as the context window fills, alongside the remaining token count and current model:
 
@@ -20,7 +20,7 @@ Single install script deploys everything.
 
 **Pane headers** — each pane shows the current git branch (blue) or worktree name (orange). Automatically updates when Claude switches directories or worktrees.
 
-**Multi-pane aware** — idle detection and git context are tracked per-pane using marker files, so multiple Claude sessions in split panes work correctly.
+**Multi-pane aware** — Claude markers and Codex context state are keyed by tmux pane ID, so multiple agent sessions in split panes cannot read one another's state.
 
 ## Prerequisites
 
@@ -28,7 +28,8 @@ Single install script deploys everything.
 - `git`
 - `bash`
 - `curl` (for Claude usage API)
-- `jq` (for Claude Code hooks — idle detection, cwd tracking)
+- `jq` (for Claude Code hooks and the Codex context marker hook)
+- Codex CLI (optional, for Codex context status)
 
 ## Install
 
@@ -55,12 +56,14 @@ The installer backs up your existing `~/.tmux.conf` before overwriting.
 | `~/.tmux/claude-usage.sh` | Claude API usage with 60s cache |
 | `~/.tmux/claude-statusline.sh` | Claude Code status line: context bar + remaining tokens |
 | `~/.tmux/claude-cwd-hook.sh` | Tracks Claude's working directory |
+| `~/.tmux/codex-context-hook.sh` | Records and refreshes pane-keyed Codex context state |
+| `~/.tmux/agent-status.sh` | Renders `CL`, `CTX`, or no agent field for the active pane |
 | `~/.tmux/cleanup-markers.sh` | Cleans up stale marker files |
 | `~/.tmux/project-color.sh` | Session name to deterministic color badge |
 | `~/.tmux/cpu.sh` | CPU usage (macOS + Linux) |
 | `~/.tmux/mem.sh` | Memory usage (macOS + Linux) |
 
-The installer also adds hooks to `~/.claude/settings.json` (merges with existing settings, does not overwrite).
+The installer merges Claude hooks into `~/.claude/settings.json`. When the Codex CLI and `jq` are available, it registers this repository's `.claude-plugin/marketplace.json` as the local `tmux-claude` marketplace and installs its bundled `tmux-claude-context` plugin. It never writes `~/.codex/hooks.json`. Start a new Codex thread after installation so Codex loads the plugin hooks.
 
 ## Platform support
 
@@ -84,6 +87,8 @@ Claude Code [hooks](https://docs.anthropic.com/en/docs/claude-code/hooks) drive 
 | `PostToolUse[Bash]` | Claude runs a shell command | Track `cd` for pane headers |
 
 All state is communicated via temporary marker files in `$TMPDIR`, keyed by tmux pane ID. No background daemons.
+
+For Codex, the bundled `tmux-claude-context` plugin provides the `SessionStart`, `Stop`, and `PostCompact` lifecycle hooks. `SessionStart` records the pane/session/transcript association; `Stop` and `PostCompact` read the latest `token_count` event from that exact transcript and atomically refresh `codex-context%NN`. Missing, malformed, mismatched, or stale state is silent; it simply produces no `CTX` field. `cleanup-markers.sh` removes Claude and Codex markers for panes that no longer exist.
 
 ## License
 

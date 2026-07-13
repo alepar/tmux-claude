@@ -1,10 +1,10 @@
 # SPEC.md — tmux-claude
 
-Full specification of the tmux setup for Claude Code workflows.
+Full specification of the tmux setup for Claude Code and Codex workflows.
 
 ## Overview
 
-A tmux configuration and set of shell scripts that provide rich visual feedback when running Claude Code sessions. Designed for workflows with multiple Claude instances running in parallel across tmux panes and windows.
+A tmux configuration and set of shell scripts that provide rich visual feedback when running Claude Code and Codex sessions. Designed for workflows with multiple agents running in parallel across tmux panes and windows.
 
 ## Features
 
@@ -16,8 +16,8 @@ A tmux configuration and set of shell scripts that provide rich visual feedback 
 - 15-color palette: `204 114 039 220 183 209 156 081 141 215 117 168 149 075 229`
 - Hash algorithm: `hash = (hash * 31 + charCode) % 65536`, then `hash % 15`
 
-**Right side**: System stats and clock
-- Format: `hostname │ CPU:XX% MEM:XX% CL:S%/W%/Son%/$Extra │ HH:MM TZ`
+**Right side**: System stats, active-agent usage, and clock
+- Format: `hostname │ CPU:XX% MEM:XX% <active-agent-field> │ HH:MM TZ`
 - CPU: sampled from `/proc/stat` (Linux) or `top -l` (macOS), 0.5s sample window. Red when >= 90%.
 - MEM: from `/proc/meminfo` (Linux) or `vm_stat` (macOS). Red when >= 90%.
 - CL: Claude usage from `api.anthropic.com/api/oauth/usage` — session%/weekly%/sonnet%/$extra
@@ -26,6 +26,8 @@ A tmux configuration and set of shell scripts that provide rich visual feedback 
   - Cached for 60 seconds in `$TMPDIR/claude-usage-cache`
   - Falls back to `?` if credentials missing or API unreachable
   - Utilization percentages turn red at >= 90%, extra cost turns red at >= $150
+- The active-agent renderer walks the active pane's first-child process chain. It renders exactly one field: `CL:<existing usage>` for `claude`/`node`; `CTX:<integer>%` for `codex` with a valid pane marker; or nothing otherwise.
+- Codex `CTX` is green (`colour114`) below 60%, yellow (`colour222`) from 60% through 84%, and red (`colour196`) at 85% or above. It restores the normal status foreground after rendering.
 - Refresh interval: 3 seconds (`status-interval 3`)
 
 ### 2. Window Tabs (Status Line)
@@ -114,7 +116,7 @@ Marker files persist after panes close. Cleanup runs on:
 
 The `cleanup-markers.sh` script:
 1. Lists all live pane IDs via `tmux list-panes -a`
-2. Scans `$TMPDIR/claude-idle%*` and `$TMPDIR/claude-cwd%*`
+2. Scans `$TMPDIR/claude-idle%*`, `$TMPDIR/claude-cwd%*`, `$TMPDIR/codex-session%*`, and `$TMPDIR/codex-context%*`
 3. Removes any whose pane ID is not in the live list
 
 ### 7. Pane Border Styling
@@ -177,6 +179,18 @@ Added to `~/.claude/settings.json` under the `hooks` key:
 
 The installer **merges** these hooks with any existing settings.json content (preserves other keys like `enabledPlugins`). It does not blindly overwrite.
 
+## Codex Plugin Configuration
+
+When the Codex CLI and `jq` are present, the installer registers the repository root containing `.claude-plugin/marketplace.json` as the local `tmux-claude` marketplace and installs `tmux-claude-context@tmux-claude`. The bundled plugin exposes conventional `plugins/tmux-claude-context/hooks/hooks.json` lifecycle hooks for `SessionStart`, `Stop`, and `PostCompact`; each command ends in `|| true` and runs `~/.tmux/codex-context-hook.sh`. The installer never writes `~/.codex/hooks.json`. Codex must start a new thread after installation to load the hooks.
+
+`SessionStart` is the only writer of `$TMPDIR/codex-session%NN`; it stores the Codex `session_id` and transcript path for that exact pane. `Stop` and `PostCompact` require the same session ID, select the final transcript `event_msg` with a `token_count` payload, and atomically replace `$TMPDIR/codex-context%NN` with:
+
+```
+round(last_token_usage.input_tokens / model_context_window * 100)
+```
+
+The marker contains only a validated integer. Missing tmux state, malformed JSON, missing IDs or transcript paths, missing token records, zero windows, non-numeric values, stale files, and mismatched session IDs all exit successfully without output or marker changes.
+
 ## Claude Usage API
 
 **Endpoint**: `GET https://api.anthropic.com/api/oauth/usage`
@@ -224,3 +238,5 @@ The status bar displays `five_hour.utilization`/`seven_day.utilization`/`seven_d
 5. **Usage API requires OAuth login**: Only works with `claude.ai` OAuth authentication (the default for `claude` CLI). Won't work with API key auth.
 
 6. **New Claude sessions start idle**: `SessionStart` hook sets idle state. Since the current window tab never shows orange, this is only visible if you start Claude in a background pane.
+
+7. **Codex context is best effort**: the marker is intentionally silent until Codex has both a tracked session and a usable token-count record. It is a context-use indicator, not a remaining-token guarantee.
