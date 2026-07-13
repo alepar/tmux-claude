@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "tmux_claude",
+  "project_id": "b7f4f3be-ec38-440f-84dd-5ef320703f9f"
+}
