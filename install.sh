@@ -559,35 +559,35 @@ case "$comm" in
         printf '#[fg=colour183]CL:'
         bash "$HOME/.tmux/claude-usage.sh"
         printf '#[fg=colour248]'
-        ;;
-    codex|*/codex)
-        marker="$STATE_DIR/codex-context${PANE_ID}"
-        session_marker="$STATE_DIR/codex-session${PANE_ID}"
-        [ -f "$session_marker" ] || { rm -f "$marker"; exit 0; }
-        mapped_session=$(jq -r '.session_id // empty' "$session_marker" 2>/dev/null)
-        mapped_transcript=$(jq -r '.transcript_path // empty' "$session_marker" 2>/dev/null)
-        mapped_pane_pid=$(jq -r '.pane_pid // empty' "$session_marker" 2>/dev/null)
-        [ -n "$mapped_session" ] && [ -n "$mapped_transcript" ] && [ "$mapped_pane_pid" = "$PANE_PID" ] || {
-            rm -f "$marker" "$session_marker"
-            exit 0
-        }
-        [ -f "$marker" ] || exit 0
-        [ -f "$mapped_transcript" ] || {
-            rm -f "$marker" "$session_marker"
-            exit 0
-        }
-        context=$(cat "$marker" 2>/dev/null)
-        [[ "$context" =~ ^[0-9]+$ ]] || exit 0
-        if [ "$context" -ge 85 ] 2>/dev/null; then
-            color=colour196
-        elif [ "$context" -ge 60 ] 2>/dev/null; then
-            color=colour222
-        else
-            color=colour114
-        fi
-        printf '#[fg=%s]CTX:%s%%#[fg=colour248]' "$color" "$context"
+        exit 0
         ;;
 esac
+
+marker="$STATE_DIR/codex-context${PANE_ID}"
+session_marker="$STATE_DIR/codex-session${PANE_ID}"
+[ -f "$session_marker" ] || { rm -f "$marker"; exit 0; }
+mapped_session=$(jq -r '.session_id // empty' "$session_marker" 2>/dev/null)
+mapped_transcript=$(jq -r '.transcript_path // empty' "$session_marker" 2>/dev/null)
+mapped_pane_pid=$(jq -r '.pane_pid // empty' "$session_marker" 2>/dev/null)
+[ -n "$mapped_session" ] && [ -n "$mapped_transcript" ] && [ "$mapped_pane_pid" = "$PANE_PID" ] || {
+    rm -f "$marker" "$session_marker"
+    exit 0
+}
+[ -f "$marker" ] || exit 0
+[ -f "$mapped_transcript" ] || {
+    rm -f "$marker" "$session_marker"
+    exit 0
+}
+context=$(cat "$marker" 2>/dev/null)
+[[ "$context" =~ ^[0-9]+$ ]] || exit 0
+if [ "$context" -ge 85 ] 2>/dev/null; then
+    color=colour196
+elif [ "$context" -ge 60 ] 2>/dev/null; then
+    color=colour222
+else
+    color=colour114
+fi
+printf '#[fg=colour183]CTX:#[fg=%s]%s%%#[fg=colour248]' "$color" "$context"
 AGENT_STATUS_EOF
 chmod +x "$TMUX_DIR/agent-status.sh"
 echo "    Wrote $TMUX_DIR/agent-status.sh"

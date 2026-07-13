@@ -73,7 +73,7 @@ When the Codex CLI and `jq` are present, installation registers the repository r
 
 `SessionStart` writes the exact pane's session/transcript mapping. `Stop` and `PostCompact` require a matching session ID, read the final `event_msg` with a `token_count` payload from that mapped transcript, calculate `round(input_tokens / model_context_window * 100)`, and atomically update `codex-context%XX`. Invalid, missing, stale, or mismatched state is silent.
 
-`agent-status.sh <pane_id> <pane_pid>` follows the existing first-child process-tree convention and emits one field only: `CL:<existing claude-usage.sh output>` for `claude`/`node`, `CTX:<integer>%` for `codex` with a valid pane marker, or nothing. CTX colors are `colour114` below 60%, `colour222` through 84%, and `colour196` at 85%+.
+`agent-status.sh <pane_id> <pane_pid>` follows the existing first-child process-tree convention and emits one field only: `CL:<existing claude-usage.sh output>` for `claude`/`node`; otherwise `CTX:<integer>%` when the exact pane has valid Codex session and context markers, regardless of foreground command; or nothing. CTX colors are `colour114` below 60%, `colour222` through 84%, and `colour196` at 85%+.
 
 ## Key Design Decisions
 

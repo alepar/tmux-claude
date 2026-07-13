@@ -26,7 +26,7 @@ A tmux configuration and set of shell scripts that provide rich visual feedback 
   - Cached for 60 seconds in `$TMPDIR/claude-usage-cache`
   - Falls back to `?` if credentials missing or API unreachable
   - Utilization percentages turn red at >= 90%, extra cost turns red at >= $150
-- The active-agent renderer walks the active pane's first-child process chain. It renders exactly one field: `CL:<existing usage>` for `claude`/`node`; `CTX:<integer>%` for `codex` with a valid pane marker; or nothing otherwise.
+- The active-agent renderer walks the active pane's first-child process chain. It renders exactly one field: `CL:<existing usage>` for `claude`/`node`; otherwise `CTX:<integer>%` when the exact pane has valid Codex session and context markers, regardless of foreground command; or nothing.
 - Codex `CTX` is green (`colour114`) below 60%, yellow (`colour222`) from 60% through 84%, and red (`colour196`) at 85% or above. It restores the normal status foreground after rendering.
 - Refresh interval: 3 seconds (`status-interval 3`)
 

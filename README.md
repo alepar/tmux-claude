@@ -8,7 +8,7 @@ Single install script deploys everything.
 
 ## Features
 
-**Status bar** — project-colored session badge, CPU/MEM usage, active-agent usage, hostname, and clock. The active pane determines the agent field: `CL:` plus the existing Claude subscription usage for Claude, colored `CTX:<integer>%` for a tracked Codex pane, or nothing for a shell or unknown process. Codex is green below 60%, yellow through 84%, and red at 85% or above.
+**Status bar** — project-colored session badge, CPU/MEM usage, active-agent usage, hostname, and clock. The active pane determines the agent field: `CL:` plus the existing Claude subscription usage for Claude, colored `CTX:<integer>%` when that pane has valid Codex session and context markers (regardless of its foreground command), or nothing. Codex is green below 60%, yellow through 84%, and red at 85% or above.
 
 **Claude status line** — a 20-segment context bar that shifts green → yellow → red as the context window fills, alongside the remaining token count and current model:
 

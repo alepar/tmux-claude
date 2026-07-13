@@ -10,7 +10,7 @@ Codex does not provide a Claude-style status-line command or a direct hook paylo
 
 ## Key decisions made
 
-Use Codex hooks supplied by a bundled local Codex plugin and per-pane marker files, matching the repository's existing Claude integration rather than wrapping the `codex` command. The installer registers the repository marketplace and installs the plugin through `codex plugin`; it never writes unsupported standalone Codex hook configuration. A `SessionStart` hook records the mapping from `TMUX_PANE` to Codex session ID. `Stop` and `PostCompact` hooks read the session's latest `token_count` record and write an integer usage percentage to a pane-keyed marker. The tmux status command determines whether the active pane currently runs Claude or Codex, then renders `CL:` or `CTX:` respectively; it renders neither for a non-agent or untracked pane.
+Use Codex hooks supplied by a bundled local Codex plugin and per-pane marker files, matching the repository's existing Claude integration rather than wrapping the `codex` command. The installer registers the repository marketplace and installs the plugin through `codex plugin`; it never writes unsupported standalone Codex hook configuration. A `SessionStart` hook records the mapping from `TMUX_PANE` to Codex session ID. `Stop` and `PostCompact` hooks read the session's latest `token_count` record and write an integer usage percentage to a pane-keyed marker. The tmux status command renders `CL:` when the active pane runs Claude; otherwise it renders `CTX:` only when that exact pane has valid Codex session and context markers, and renders neither when no valid marker state exists.
 
 ## Decision points, by section
 
@@ -28,7 +28,7 @@ The selected calculation is `last_token_usage.input_tokens / model_context_windo
 
 ### Rendering
 
-The active-pane output is `CL:<existing Claude usage>` when the pane runs Claude Code, `CTX:<percent>%` when it runs Codex and has a valid marker, and empty otherwise. Codex percentage colors match the current context thresholds: green below 60%, yellow from 60% through 84%, and red at 85% or above. Showing `CTX:?` was discarded because absence of a marker is not meaningful information and wastes status-bar space.
+The active-pane output is `CL:<existing Claude usage>` when the pane runs Claude Code, `CTX:<percent>%` when its pane-keyed Codex session and context markers are valid, and empty otherwise. Codex rendering deliberately does not inspect the foreground executable name: the marker pair is the reliable session attribution boundary and survives Codex CLI process-name changes. Claude rendering retains priority over a stale Codex marker. Codex percentage colors match the current context thresholds: green below 60%, yellow from 60% through 84%, and red at 85% or above. Showing `CTX:?` was discarded because absence of a marker is not meaningful information and wastes status-bar space.
 
 ### Lifecycle and failures
 
@@ -52,3 +52,5 @@ Tests will exercise token-record parsing, rounding and color boundaries, active-
 *As this design is implemented and iterated on — bug fixes, adjustments, anything that diverged from the assumptions above — append a dated note here, whether or not a formal debugging skill was used.*
 
 **Changes vs. original design (2026-07-13):** Codex requires the local marketplace manifest at `.claude-plugin/marketplace.json`, requires `jq` for the installed hook helper, and caches local plugins by manifest version. The installer therefore installs/enables the bundled version rather than rewriting repository metadata to force a refresh; a future hook-definition release must intentionally bump the plugin version/cachebuster before reinstalling.
+
+- 2026-07-13: The live CLI reports `codex-code-mode`, not a stable `codex` process name. CTX rendering now trusts valid pane-keyed marker state rather than process-name detection.

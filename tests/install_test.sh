@@ -271,11 +271,11 @@ for value in 59 60 84 85; do
     start_session "%$value" "status-$value" "$status_transcript"
     printf '%s\n' "$value" > "$STATE_DIR/codex-context%$value"
 done
-assert_eq "$(FAKE_COMM=codex TMPDIR="$STATE_DIR" PATH="$BIN_DIR:$PATH" bash "$STATUS" '%59' 100)" '#[fg=colour114]CTX:59%#[fg=colour248]'
-assert_eq "$(FAKE_COMM=codex TMPDIR="$STATE_DIR" PATH="$BIN_DIR:$PATH" bash "$STATUS" '%60' 100)" '#[fg=colour222]CTX:60%#[fg=colour248]'
-assert_eq "$(FAKE_COMM=codex TMPDIR="$STATE_DIR" PATH="$BIN_DIR:$PATH" bash "$STATUS" '%84' 100)" '#[fg=colour222]CTX:84%#[fg=colour248]'
-assert_eq "$(FAKE_COMM=codex TMPDIR="$STATE_DIR" PATH="$BIN_DIR:$PATH" bash "$STATUS" '%85' 100)" '#[fg=colour196]CTX:85%#[fg=colour248]'
-assert_eq "$(FAKE_COMM=sh TMPDIR="$STATE_DIR" PATH="$BIN_DIR:$PATH" bash "$STATUS" '%59' 100)" ''
+assert_eq "$(FAKE_COMM=codex TMPDIR="$STATE_DIR" PATH="$BIN_DIR:$PATH" bash "$STATUS" '%59' 100)" '#[fg=colour183]CTX:#[fg=colour114]59%#[fg=colour248]'
+assert_eq "$(FAKE_COMM=codex TMPDIR="$STATE_DIR" PATH="$BIN_DIR:$PATH" bash "$STATUS" '%60' 100)" '#[fg=colour183]CTX:#[fg=colour222]60%#[fg=colour248]'
+assert_eq "$(FAKE_COMM=codex TMPDIR="$STATE_DIR" PATH="$BIN_DIR:$PATH" bash "$STATUS" '%84' 100)" '#[fg=colour183]CTX:#[fg=colour222]84%#[fg=colour248]'
+assert_eq "$(FAKE_COMM=codex TMPDIR="$STATE_DIR" PATH="$BIN_DIR:$PATH" bash "$STATUS" '%85' 100)" '#[fg=colour183]CTX:#[fg=colour196]85%#[fg=colour248]'
+assert_eq "$(FAKE_COMM=sh TMPDIR="$STATE_DIR" PATH="$BIN_DIR:$PATH" bash "$STATUS" '%59' 100)" '#[fg=colour183]CTX:#[fg=colour114]59%#[fg=colour248]'
 printf '%s\n' '#!/usr/bin/env bash' 'printf mocked' > "$HOME_DIR/.tmux/claude-usage.sh"
 chmod +x "$HOME_DIR/.tmux/claude-usage.sh"
 assert_eq "$(FAKE_COMM=claude TMPDIR="$STATE_DIR" HOME="$HOME_DIR" PATH="$BIN_DIR:$PATH" bash "$STATUS" '%59' 100)" '#[fg=colour183]CL:mocked#[fg=colour248]'
