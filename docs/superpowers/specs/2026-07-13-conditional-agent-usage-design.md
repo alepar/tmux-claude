@@ -6,17 +6,21 @@ The tmux status bar always displays the Claude subscription-usage field (`CL:`),
 
 ## Main challenges
 
-Codex does not provide a Claude-style status-line command or a direct hook payload containing token usage. Its hook payload includes the session ID and inherits the tmux pane environment, while its locally persisted session transcript contains token-count events. The implementation must bind that session to the pane at session start, avoid selecting a different Codex instance in a multi-pane repository, and degrade silently when no trustworthy state exists.
+Codex does not provide a Claude-style status-line command or a direct hook payload containing token usage. Its hook payload includes the session ID and inherits the tmux pane environment, while its locally persisted session transcript contains token-count events. Codex discovers lifecycle hooks from installed plugins, not from a standalone `~/.codex/hooks.json`; the implementation must therefore install a small local plugin as well as bind the session to the pane at session start, avoid selecting a different Codex instance in a multi-pane repository, and degrade silently when no trustworthy state exists.
 
 ## Key decisions made
 
-Use Codex hooks and per-pane marker files, matching the repository's existing Claude integration rather than wrapping the `codex` command. A `SessionStart` hook records the mapping from `TMUX_PANE` to Codex session ID. `Stop` and `PostCompact` hooks read the session's latest `token_count` record and write an integer usage percentage to a pane-keyed marker. The tmux status command determines whether the active pane currently runs Claude or Codex, then renders `CL:` or `CTX:` respectively; it renders neither for a non-agent or untracked pane.
+Use Codex hooks supplied by a bundled local Codex plugin and per-pane marker files, matching the repository's existing Claude integration rather than wrapping the `codex` command. The installer registers the repository marketplace and installs the plugin through `codex plugin`; it never writes unsupported standalone Codex hook configuration. A `SessionStart` hook records the mapping from `TMUX_PANE` to Codex session ID. `Stop` and `PostCompact` hooks read the session's latest `token_count` record and write an integer usage percentage to a pane-keyed marker. The tmux status command determines whether the active pane currently runs Claude or Codex, then renders `CL:` or `CTX:` respectively; it renders neither for a non-agent or untracked pane.
 
 ## Decision points, by section
 
 ### Status source
 
-The selected source is a pane-keyed Codex marker file refreshed from Codex hooks. A status-time scan for the newest session in the working directory was discarded because multiple Codex panes may share a repository and therefore produce incorrect attribution. A launcher wrapper was discarded because it changes the normal way users start Codex and is unnecessary when hooks provide the session identity.
+The selected source is a pane-keyed Codex marker file refreshed from hooks in a bundled `tmux-claude-context` Codex plugin. The plugin uses Codex's supported hook discovery mechanism and calls the already-installed `~/.tmux/codex-context-hook.sh`. A status-time scan for the newest session in the working directory was discarded because multiple Codex panes may share a repository and therefore produce incorrect attribution. A launcher wrapper was discarded because it changes the normal way users start Codex and is unnecessary when hooks provide the session identity. A standalone `~/.codex/hooks.json` was discarded because Codex does not load it.
+
+### Plugin installation
+
+The repository provides a local marketplace and a single plugin. When Codex is installed, `install.sh` registers that marketplace and installs or refreshes the plugin using the Codex CLI. This is intentionally a user-level configuration change, equivalent in scope to the existing Claude settings integration, and is skipped with a clear message if Codex is unavailable. The plugin contains only lifecycle-hook declarations; all marker parsing and rendering remains in `~/.tmux` scripts so the plugin has one responsibility.
 
 ### Codex percentage
 
