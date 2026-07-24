@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # install-tmux-setup.sh — Self-contained tmux setup installer
-# Works on macOS and Linux. Requires: tmux, git, jq (optional, for agent hooks)
+# Works on macOS and Linux. Requires: tmux, git, jq (optional, for Claude hooks)
 #
 # Usage: bash install.sh
 #
@@ -8,13 +8,10 @@
 #   ~/.tmux.conf               — tmux configuration
 #   ~/.tmux/cpu.sh             — CPU usage for status bar
 #   ~/.tmux/mem.sh             — Memory usage for status bar
-#   ~/.tmux/claude-usage.sh    — Claude subscription usage for status bar
+#   ~/.tmux/claude-usage.sh    — Claude subscription usage for its native status line
 #   ~/.tmux/project-color.sh   — Session-hashed color badge
 #   ~/.tmux/pane-label.sh      — Pane header: git branch/worktree + idle indicator
 #   ~/.tmux/claude-cwd-hook.sh — Claude Code cwd tracking hook
-#   ~/.tmux/codex-context-hook.sh — Codex context marker hook
-#   ~/.tmux/agent-status.sh    — active-pane Claude/Codex status renderer
-#   ~/.tmux/cleanup-markers.sh — Cleans up stale marker files
 #
 # Claude Code hooks (added to ~/.claude/settings.json if jq + ~/.claude exist):
 #   PostToolUse[Bash]  — tracks cwd changes when Claude cd's
@@ -23,16 +20,74 @@
 #   SessionStart       — initializes cwd marker + idle state
 #   SessionEnd         — cleans up markers
 #
-# Codex plugin (installed when the Codex CLI and jq are available):
-#   SessionStart / Stop / PostCompact — maintain pane-keyed context markers
-#
 # Backs up existing ~/.tmux.conf if present.
 
 set -euo pipefail
 
 TMUX_DIR="$HOME/.tmux"
 TMUX_CONF="$HOME/.tmux.conf"
-REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+merge_codex_tui_config() {
+    local codex_dir="$HOME/.codex"
+    local config="$codex_dir/config.toml"
+    local temp
+    local input=/dev/null
+
+    mkdir -p "$codex_dir"
+    [ -f "$config" ] && input="$config"
+    temp=$(mktemp "$codex_dir/config.toml.XXXXXX") || return 1
+
+    if awk '
+        function managed_keys() {
+            print "status_line = [\"context-remaining\", \"five-hour-limit\", \"weekly-limit\"]"
+            print "status_line_use_colors = true"
+        }
+        function is_table(line) {
+            return line ~ /^\[[^]]+\][[:space:]]*(#.*)?$/ || line ~ /^\[\[[^]]+\]\][[:space:]]*(#.*)?$/
+        }
+        {
+            if (in_tui && is_table($0)) {
+                if (!managed_emitted) {
+                    managed_keys()
+                    managed_emitted = 1
+                }
+                in_tui = 0
+            }
+
+            if ($0 ~ /^\[[[:space:]]*tui[[:space:]]*\][[:space:]]*(#.*)?$/) {
+                seen_tui = 1
+                in_tui = 1
+                managed_emitted = 0
+                print
+                next
+            }
+
+            if ($0 ~ /^\[[[:space:]]*tui[[:space:]]*\.[^]]+\][[:space:]]*(#.*)?$/ && !seen_tui) {
+                print "[tui]"
+                managed_keys()
+                seen_tui = 1
+                managed_emitted = 1
+            }
+
+            if (in_tui && $0 ~ /^[[:space:]]*status_line[[:space:]]*=/) next
+            if (in_tui && $0 ~ /^[[:space:]]*status_line_use_colors[[:space:]]*=/) next
+            print
+        }
+        END {
+            if (in_tui && !managed_emitted) {
+                managed_keys()
+            } else if (!seen_tui) {
+                print "[tui]"
+                managed_keys()
+            }
+        }
+    ' "$input" > "$temp"; then
+        mv -f "$temp" "$config"
+    else
+        rm -f "$temp"
+        return 1
+    fi
+}
 
 echo "==> Installing tmux setup..."
 
@@ -44,6 +99,12 @@ if [ -f "$TMUX_CONF" ]; then
 fi
 
 mkdir -p "$TMUX_DIR"
+merge_codex_tui_config
+echo "    Updated $HOME/.codex/config.toml with native Codex status items"
+
+# Retire the former shared Codex state integration on reinstall.
+rm -f "$TMUX_DIR/agent-status.sh" "$TMUX_DIR/cleanup-markers.sh" "$TMUX_DIR/codex-context-hook.sh"
+rm -f "${TMPDIR:-/tmp}"/codex-session%* "${TMPDIR:-/tmp}"/codex-context%*
 
 # --------------------------------------------------------------------------
 # ~/.tmux.conf
@@ -73,14 +134,13 @@ set -g status-style "bg=colour235,fg=colour248"
 set -g status-left-length 50
 set -g status-left "#(~/.tmux/project-color.sh '#{session_name}')"
 
-# Right: hostname, CPU, memory, active-agent usage, time (local TZ)
-set -g status-right-length 100
+# Right: hostname, CPU, memory, and time (local TZ)
+set -g status-right-length 80
 set -g status-right "\
 #[fg=colour243]#h \
 #[fg=colour240]│ \
 #[fg=colour222]CPU:#(~/.tmux/cpu.sh)%% \
 #[fg=colour114]MEM:#(~/.tmux/mem.sh)%% \
-#(bash ~/.tmux/agent-status.sh '#{pane_id}' '#{pane_pid}') \
 #[fg=colour240]│ \
 #[fg=colour248]%H:%M %Z "
 
@@ -95,14 +155,16 @@ set -g pane-border-format "#(bash ~/.tmux/pane-label.sh '#{pane_pid}' '#{pane_id
 set -g pane-border-style "fg=colour238"
 set -g pane-active-border-style "fg=colour075"
 
+# Reloading tmux does not remove hooks absent from the new config. Clear the
+# legacy cleanup hooks before they can invoke the retired helper.
+set-hook -gu after-split-window
+set-hook -gu after-new-window
+set-hook -gu after-new-session
+
 # --- Clear idle highlight when pane becomes active (dismiss notification) ---
 set-hook -g after-select-pane 'run-shell -b "T=$TMPDIR; [ -z \"$T\" ] && T=/tmp; rm -f \"$T/claude-idle#{pane_id}\"; tmux set -wu @claude_idle 2>/dev/null; true"'
 set-hook -g after-select-window 'run-shell -b "T=$TMPDIR; [ -z \"$T\" ] && T=/tmp; rm -f \"$T/claude-idle#{pane_id}\"; tmux set -wu @claude_idle 2>/dev/null; true"'
 
-# --- Clean up stale marker files when new panes/windows are created ---
-set-hook -g after-split-window 'run-shell -b "bash ~/.tmux/cleanup-markers.sh"'
-set-hook -g after-new-window 'run-shell -b "bash ~/.tmux/cleanup-markers.sh"'
-set-hook -g after-new-session 'run-shell -b "bash ~/.tmux/cleanup-markers.sh"'
 TMUX_CONF_EOF
 echo "    Wrote $TMUX_CONF"
 
@@ -186,15 +248,20 @@ echo "    Wrote $TMUX_DIR/mem.sh"
 # --------------------------------------------------------------------------
 cat > "$TMUX_DIR/claude-usage.sh" << 'EOF'
 #!/usr/bin/env bash
-# Fetch Claude subscription usage percentage for tmux status bar.
+# Fetch Claude subscription usage for Claude's native status line.
 # Caches result for 5 minutes. On rate-limit/error, exponential backoff up to 60 min.
-# Red highlight: percentages >= 90%, dollar cost >= $150.
 # Dependencies: curl, bash, grep — no python3/jq/node required.
 
 CACHE_FILE="${TMPDIR:-/tmp}/claude-usage-cache"
 BACKOFF_FILE="${TMPDIR:-/tmp}/claude-usage-backoff"
 BASE_TTL=300  # 5 minutes
 MAX_TTL=3600  # 60 minutes
+
+# Older installer versions cached tmux color directives. Strip them so a
+# native Claude status line always receives plain text.
+plain_usage() {
+    sed 's/#\[[^]]*\]//g'
+}
 
 # Determine effective TTL (base or backoff)
 NOW=$(date +%s)
@@ -213,7 +280,7 @@ if [ -f "$CACHE_FILE" ]; then
         age=$(( NOW - $(stat -c%Y "$CACHE_FILE") ))
     fi
     if [ "$age" -lt "$EFFECTIVE_TTL" ]; then
-        cat "$CACHE_FILE"
+        plain_usage < "$CACHE_FILE"
         exit 0
     fi
 fi
@@ -250,7 +317,7 @@ if [ "$HTTP_CODE" = "429" ] || [ "${HTTP_CODE:-0}" -ge 500 ] 2>/dev/null; then
     printf '%s' "$NEXT_TTL" > "$BACKOFF_FILE"
     # Touch cache so it won't retry until backoff expires
     [ -f "$CACHE_FILE" ] && touch "$CACHE_FILE" || printf '?' > "$CACHE_FILE"
-    cat "$CACHE_FILE"
+    plain_usage < "$CACHE_FILE"
     exit 0
 fi
 
@@ -269,40 +336,31 @@ json_num() {
     printf '%s' "$2" | grep -o "\"$1\":[0-9.]*" | head -1 | cut -d: -f2
 }
 
-# Format percentage with red highlight for >= 90%
+# Format percentage as plain native-status text.
 fmt_pct() {
     local v="$1"
     if [ -z "$v" ]; then printf '?'; return; fi
     local n=${v%%.*}
-    if [ "$n" -ge 90 ] 2>/dev/null; then
-        printf '#[fg=colour196]%s%%#[fg=colour183]' "$n"
-    else
-        printf '%s%%' "$n"
-    fi
+    printf '%s%%' "$n"
 }
 
-# Format dollar cost with red highlight for >= $150
+# Format dollar cost as plain native-status text.
 fmt_cost() {
     local v="$1"
     if [ -z "$v" ]; then printf -- '-'; return; fi
     local cents=${v%%.*}
     local dollars=$(( cents / 100 ))
-    if [ "$dollars" -ge 150 ] 2>/dev/null; then
-        printf '#[fg=colour196]$%s#[fg=colour183]' "$dollars"
-    else
-        printf '$%s' "$dollars"
-    fi
+    printf '$%s' "$dollars"
 }
 
 # Parse response fields
 S=$(json_util "five_hour" "$HTTP_BODY")
 W=$(json_util "seven_day" "$HTTP_BODY")
-WS=$(json_util "seven_day_sonnet" "$HTTP_BODY")
 EU=$(json_num "used_credits" "$HTTP_BODY")
 
-USAGE="$(fmt_pct "$S")/$(fmt_pct "$W")/$(fmt_pct "$WS")/$(fmt_cost "$EU")"
+USAGE="$(fmt_pct "$S")/$(fmt_pct "$W")/$(fmt_cost "$EU")"
 
-if [ "$USAGE" = "?/?/?/-" ]; then
+if [ "$USAGE" = "?/?/-" ]; then
     # Total parse failure — treat as error, apply backoff
     NEXT_TTL=$(( EFFECTIVE_TTL * 2 ))
     [ "$NEXT_TTL" -gt "$MAX_TTL" ] && NEXT_TTL=$MAX_TTL
@@ -414,6 +472,8 @@ printf "%s%s%s%s%s | remaining: %s/%s" \
     "$color" "$filled_part" "$dim" "$empty_part" "$reset" \
     "$(human "$remaining")" "$(human "$window")"
 [ -n "$model_name" ] && printf " | %s" "$model_name"
+printf " | CL:"
+bash "$HOME/.tmux/claude-usage.sh"
 EOF
 chmod +x "$TMUX_DIR/claude-statusline.sh"
 echo "    Wrote $TMUX_DIR/claude-statusline.sh"
@@ -532,84 +592,6 @@ chmod +x "$TMUX_DIR/pane-label.sh"
 echo "    Wrote $TMUX_DIR/pane-label.sh"
 
 # --------------------------------------------------------------------------
-# ~/.tmux/agent-status.sh
-# --------------------------------------------------------------------------
-cat > "$TMUX_DIR/agent-status.sh" << 'AGENT_STATUS_EOF'
-#!/usr/bin/env bash
-# Render the active pane's agent status. Claude keeps its existing usage field;
-# Codex renders a pane-keyed context percentage when a valid marker exists.
-
-PANE_ID="${1:-}"
-PANE_PID="${2:-}"
-STATE_DIR="${TMPDIR:-/tmp}"
-
-[[ "$PANE_ID" =~ ^%[0-9]+$ ]] || exit 0
-[[ "$PANE_PID" =~ ^[0-9]+$ ]] || exit 0
-
-pid="$PANE_PID"
-while true; do
-    child=$(ps -axo pid=,ppid= 2>/dev/null | awk -v parent="$pid" '$2 == parent { print $1; exit }')
-    [ -n "$child" ] || break
-    pid="$child"
-done
-comm=$(ps -o comm= -p "$pid" 2>/dev/null | head -1 | tr -d '[:space:]')
-
-case "$comm" in
-    claude|node)
-        printf '#[fg=colour183]CL:'
-        bash "$HOME/.tmux/claude-usage.sh"
-        printf '#[fg=colour248]'
-        exit 0
-        ;;
-esac
-
-marker="$STATE_DIR/codex-context${PANE_ID}"
-session_marker="$STATE_DIR/codex-session${PANE_ID}"
-[ -f "$session_marker" ] || { rm -f "$marker"; exit 0; }
-mapped_session=$(jq -r '.session_id // empty' "$session_marker" 2>/dev/null)
-mapped_transcript=$(jq -r '.transcript_path // empty' "$session_marker" 2>/dev/null)
-mapped_pane_pid=$(jq -r '.pane_pid // empty' "$session_marker" 2>/dev/null)
-[ -n "$mapped_session" ] && [ -n "$mapped_transcript" ] && [ "$mapped_pane_pid" = "$PANE_PID" ] || {
-    rm -f "$marker" "$session_marker"
-    exit 0
-}
-[ -f "$marker" ] || exit 0
-[ -f "$mapped_transcript" ] || {
-    rm -f "$marker" "$session_marker"
-    exit 0
-}
-context=$(cat "$marker" 2>/dev/null)
-[[ "$context" =~ ^[0-9]+$ ]] || exit 0
-if [ "$context" -ge 85 ] 2>/dev/null; then
-    color=colour196
-elif [ "$context" -ge 60 ] 2>/dev/null; then
-    color=colour222
-else
-    color=colour114
-fi
-printf '#[fg=colour183]CTX:#[fg=%s]%s%%#[fg=colour248]' "$color" "$context"
-AGENT_STATUS_EOF
-chmod +x "$TMUX_DIR/agent-status.sh"
-echo "    Wrote $TMUX_DIR/agent-status.sh"
-
-# --------------------------------------------------------------------------
-# ~/.tmux/cleanup-markers.sh
-# --------------------------------------------------------------------------
-cat > "$TMUX_DIR/cleanup-markers.sh" << 'CLEANUP_EOF'
-#!/usr/bin/env bash
-# Remove agent marker files for panes that no longer exist.
-d="${TMPDIR:-/tmp}"
-live=$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null) || exit 0
-for f in "$d"/claude-idle%* "$d"/claude-cwd%* "$d"/codex-session%* "$d"/codex-context%*; do
-    [ -f "$f" ] || continue
-    pane_id="%$(basename "$f" | grep -o '[0-9]*$')"
-    echo "$live" | grep -qF "$pane_id" || rm -f "$f"
-done
-CLEANUP_EOF
-chmod +x "$TMUX_DIR/cleanup-markers.sh"
-echo "    Wrote $TMUX_DIR/cleanup-markers.sh"
-
-# --------------------------------------------------------------------------
 # ~/.tmux/claude-cwd-hook.sh  (Claude Code PostToolUse hook)
 # --------------------------------------------------------------------------
 cat > "$TMUX_DIR/claude-cwd-hook.sh" << 'HOOK_EOF'
@@ -634,78 +616,6 @@ fi
 HOOK_EOF
 chmod +x "$TMUX_DIR/claude-cwd-hook.sh"
 echo "    Wrote $TMUX_DIR/claude-cwd-hook.sh"
-
-# --------------------------------------------------------------------------
-# ~/.tmux/codex-context-hook.sh  (Codex lifecycle hooks)
-# --------------------------------------------------------------------------
-cat > "$TMUX_DIR/codex-context-hook.sh" << 'CODEX_HOOK_EOF'
-#!/usr/bin/env bash
-# Maintain a Codex context marker per tmux pane. SessionStart owns the mapping;
-# Stop and PostCompact refresh only when their session ID still matches it.
-
-event="${1:-}"
-state_dir="${TMPDIR:-/tmp}"
-pane="${TMUX_PANE:-}"
-[[ "$pane" =~ ^%[0-9]+$ ]] || exit 0
-case "$event" in start|stop|post-compact) ;; *) exit 0 ;; esac
-
-input=$(cat)
-session_id=$(printf '%s' "$input" | jq -r 'if type == "object" then (.session_id // empty) else empty end' 2>/dev/null)
-[ -n "$session_id" ] || exit 0
-
-session_marker="$state_dir/codex-session${pane}"
-context_marker="$state_dir/codex-context${pane}"
-
-if [ "$event" = start ]; then
-    # transcript_path is the current Codex field; the first spelling preserves
-    # compatibility with older hook payloads.
-    transcript=$(printf '%s' "$input" | jq -r 'if type == "object" then (.transcript_path // .agent_transcript_path // empty) else empty end' 2>/dev/null)
-    [ -n "$transcript" ] || exit 0
-    pane_pid=$(tmux display-message -p -t "$pane" '#{pane_pid}' 2>/dev/null)
-    [[ "$pane_pid" =~ ^[0-9]+$ ]] || exit 0
-    temp=$(mktemp "$state_dir/codex-session.XXXXXX" 2>/dev/null) || exit 0
-    if jq -n --arg session_id "$session_id" --arg transcript_path "$transcript" --arg pane_pid "$pane_pid" \
-        '{session_id: $session_id, transcript_path: $transcript_path, pane_pid: $pane_pid}' > "$temp" 2>/dev/null; then
-        if mv -f "$temp" "$session_marker" 2>/dev/null; then
-            rm -f "$context_marker"
-        else
-            rm -f "$temp"
-        fi
-    else
-        rm -f "$temp"
-    fi
-    exit 0
-fi
-
-[ -f "$session_marker" ] || exit 0
-mapped_session=$(jq -r '.session_id // empty' "$session_marker" 2>/dev/null)
-transcript=$(jq -r '.transcript_path // empty' "$session_marker" 2>/dev/null)
-[ "$session_id" = "$mapped_session" ] || exit 0
-[ -n "$transcript" ] && [ -f "$transcript" ] || exit 0
-
-usage=$(jq -r -s '
-    map(select(.type == "event_msg" and .payload.type == "token_count"))
-    | last
-    | if . == null then empty
-      else [(.payload.info.last_token_usage.input_tokens // empty), (.payload.info.model_context_window // empty)] | @tsv
-      end
-' "$transcript" 2>/dev/null)
-IFS=$'\t' read -r input_tokens model_context_window <<< "$usage"
-[[ "$input_tokens" =~ ^[0-9]+$ ]] || exit 0
-[[ "$model_context_window" =~ ^[1-9][0-9]*$ ]] || exit 0
-percentage=$(awk -v tokens="$input_tokens" -v window="$model_context_window" \
-    'BEGIN { printf "%.0f", (tokens / window) * 100 }' 2>/dev/null) || exit 0
-[[ "$percentage" =~ ^[0-9]+$ ]] || exit 0
-
-temp=$(mktemp "$state_dir/codex-context.XXXXXX" 2>/dev/null) || exit 0
-if printf '%s\n' "$percentage" > "$temp" && mv -f "$temp" "$context_marker" 2>/dev/null; then
-    :
-else
-    rm -f "$temp"
-fi
-CODEX_HOOK_EOF
-chmod +x "$TMUX_DIR/codex-context-hook.sh"
-echo "    Wrote $TMUX_DIR/codex-context-hook.sh"
 
 # --------------------------------------------------------------------------
 # Claude Code hooks (optional — requires Claude Code + jq)
@@ -778,25 +688,13 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# Codex plugin (optional — requires Codex CLI and jq)
+# Retire the legacy local Codex plugin when it is present.
 # --------------------------------------------------------------------------
-if command -v codex &>/dev/null && command -v jq &>/dev/null; then
+if command -v codex &>/dev/null; then
     echo ""
-    echo "==> Codex detected. Installing tmux-claude context plugin..."
-    if codex plugin marketplace add "$REPO_ROOT"; then
-        echo "    Registered tmux-claude marketplace"
-    else
-        echo "    Could not register tmux-claude marketplace; continuing."
-    fi
-    if codex plugin add tmux-claude-context@tmux-claude; then
-        echo "    Installed tmux-claude-context plugin (start a new Codex thread to load hooks)."
-    else
-        echo "    Could not install tmux-claude-context plugin; continuing."
-    fi
-else
-    echo ""
-    echo "    Skipping Codex context plugin (Codex CLI or jq not found)."
-    echo "    Install Codex and jq, then re-run to enable context status."
+    echo "==> Removing legacy Codex tmux-claude plugin..."
+    codex plugin remove tmux-claude-context@tmux-claude || true
+    codex plugin marketplace remove tmux-claude || true
 fi
 
 # --------------------------------------------------------------------------
@@ -811,9 +709,9 @@ fi
 
 echo ""
 echo "Done! Features:"
-echo "  - Status bar: project-colored badge, CPU/MEM/active-agent usage, hostname, clock"
+echo "  - Status bar: project-colored badge, CPU/MEM, hostname, clock"
 echo "  - Window tabs: orange highlight when Claude is idle"
 echo "  - Pane headers: git branch (blue) / worktree name (orange)"
 echo "  - Pane headers: orange bg strip when Claude is idle (per-pane)"
-echo "  - Claude Code: auto-tracks cwd when switching worktrees"
-echo "  - Codex: pane-keyed context usage for active Codex panes"
+echo "  - Claude Code: native context/model line with cached CL: usage"
+echo "  - Codex: native colored context and usage status items"
