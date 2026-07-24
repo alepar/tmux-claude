@@ -6,7 +6,7 @@ tmux-claude provides tmux project/system presentation plus native Claude Code an
 
 ## tmux status bar
 
-The status bar contains a deterministic project-color badge, hostname, CPU percentage, memory percentage, and clock. It refreshes every three seconds. CPU and memory use the existing macOS/Linux implementations and turn red at 90% or higher.
+The status bar contains a deterministic project-color badge, hostname, CPU percentage, GPU utilization percentage, and clock. It refreshes every three seconds. Both turn red at 90% or higher. GPU utilization is averaged across all cards, read from `nvidia-smi` when present and otherwise from the AMD `gpu_busy_percent` sysfs entries; it renders `?` when neither source is available.
 
 tmux retains pane labels and Claude idle highlighting. `pane-label.sh` walks the pane process tree to resolve its working directory, using the retained Claude CWD marker for Claude/node processes. It never detects an agent in order to render agent status.
 

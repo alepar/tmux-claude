@@ -11,7 +11,7 @@ tmux source ~/.tmux.conf
 
 ## What It Does
 
-- **tmux status bar**: project-colored badge, hostname, CPU/MEM, and clock only.
+- **tmux status bar**: project-colored badge, hostname, CPU/GPU, and clock only.
 - **Codex native status**: colored `context-remaining`, `five-hour-limit`, and `weekly-limit` items in `~/.codex/config.toml`.
 - **Claude native status**: context bar, remaining tokens, optional model, and a cached `CL:` usage suffix.
 - **Window tabs and pane headers**: retained Claude idle highlighting and git/worktree labels.
@@ -53,14 +53,14 @@ Codex state is not shared through tmux. Reinstallation removes the former local 
 | `~/.tmux/claude-usage.sh` | Cached Claude subscription usage |
 | `~/.tmux/claude-statusline.sh` | Claude native context/model/`CL:` line |
 | `~/.tmux/project-color.sh` | Session color badge |
-| `~/.tmux/cpu.sh`, `~/.tmux/mem.sh` | System usage |
+| `~/.tmux/cpu.sh`, `~/.tmux/gpu.sh` | System usage |
 | `~/.claude/settings.json` | Merged Claude hooks and status line |
 | `~/.codex/config.toml` | Narrowly merged Codex native TUI settings |
 
 ## Platform Support
 
-- Linux: `/proc` for CPU, memory, and CWD.
-- macOS: `top`, `vm_stat`, and `lsof` equivalents.
+- Linux: `/proc` for CPU and CWD; `nvidia-smi` or AMD `gpu_busy_percent` sysfs for GPU.
+- macOS: `top` and `lsof` equivalents. GPU utilization renders `?`.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:6cd5cc61 -->
 ## Beads Issue Tracker

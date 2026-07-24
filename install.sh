@@ -7,7 +7,7 @@
 # Installs:
 #   ~/.tmux.conf               — tmux configuration
 #   ~/.tmux/cpu.sh             — CPU usage for status bar
-#   ~/.tmux/mem.sh             — Memory usage for status bar
+#   ~/.tmux/gpu.sh             — GPU utilization for status bar
 #   ~/.tmux/claude-usage.sh    — Claude subscription usage for its native status line
 #   ~/.tmux/project-color.sh   — Session-hashed color badge
 #   ~/.tmux/pane-label.sh      — Pane header: git branch/worktree + idle indicator
@@ -104,6 +104,8 @@ echo "    Updated $HOME/.codex/config.toml with native Codex status items"
 
 # Retire the former shared Codex state integration on reinstall.
 rm -f "$TMUX_DIR/agent-status.sh" "$TMUX_DIR/cleanup-markers.sh" "$TMUX_DIR/codex-context-hook.sh"
+# The status bar shows GPU utilization instead of memory.
+rm -f "$TMUX_DIR/mem.sh"
 rm -f "${TMPDIR:-/tmp}"/codex-session%* "${TMPDIR:-/tmp}"/codex-context%*
 
 # --------------------------------------------------------------------------
@@ -134,13 +136,13 @@ set -g status-style "bg=colour235,fg=colour248"
 set -g status-left-length 50
 set -g status-left "#(~/.tmux/project-color.sh '#{session_name}')"
 
-# Right: hostname, CPU, memory, and time (local TZ)
+# Right: hostname, CPU, GPU, and time (local TZ)
 set -g status-right-length 80
 set -g status-right "\
 #[fg=colour243]#h \
 #[fg=colour240]│ \
 #[fg=colour222]CPU:#(~/.tmux/cpu.sh)%% \
-#[fg=colour114]MEM:#(~/.tmux/mem.sh)%% \
+#[fg=colour114]GPU:#(~/.tmux/gpu.sh)%% \
 #[fg=colour240]│ \
 #[fg=colour248]%H:%M %Z "
 
@@ -206,42 +208,29 @@ chmod +x "$TMUX_DIR/cpu.sh"
 echo "    Wrote $TMUX_DIR/cpu.sh"
 
 # --------------------------------------------------------------------------
-# ~/.tmux/mem.sh
+# ~/.tmux/gpu.sh
 # --------------------------------------------------------------------------
-cat > "$TMUX_DIR/mem.sh" << 'EOF'
+cat > "$TMUX_DIR/gpu.sh" << 'EOF'
 #!/usr/bin/env bash
-# Memory usage percentage (macOS + Linux) — red when >= 90%
-case "$(uname)" in
-    Darwin)
-        total_mem=$(sysctl -n hw.memsize 2>/dev/null)
-        val=$(vm_stat 2>/dev/null | awk -v total_mem="$total_mem" '
-            /page size of/      { page_size = $8 + 0 }
-            /Pages active:/     { gsub(/[^0-9]/,"",$NF); active = $NF + 0 }
-            /Pages wired/       { gsub(/[^0-9]/,"",$NF); wired = $NF + 0 }
-            /Pages speculative/ { gsub(/[^0-9]/,"",$NF); spec = $NF + 0 }
-            END {
-                if (page_size > 0) {
-                    total_pages = total_mem / page_size
-                    used = active + wired + spec
-                    if (total_pages > 0) printf "%.0f", used * 100 / total_pages
-                    else print "?"
-                } else print "?"
-            }
-        ')
-        ;;
-    Linux)
-        val=$(awk '/MemTotal/ {t=$2} /MemAvailable/ {a=$2} END {printf "%.0f", (1-a/t)*100}' /proc/meminfo)
-        ;;
-    *) val="?" ;;
-esac
+# GPU utilization percentage averaged over all cards — red when >= 90%
+avg() {
+    awk '/^[0-9]+$/ { sum += $1; n++ } END { if (n > 0) printf "%.0f", sum / n }'
+}
+if command -v nvidia-smi > /dev/null 2>&1; then
+    val=$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null | avg)
+else
+    # AMD cards expose per-card busy percentage through sysfs.
+    val=$(cat /sys/class/drm/card*/device/gpu_busy_percent 2>/dev/null | avg)
+fi
+[ -n "$val" ] || val="?"
 if [ "$val" != "?" ] && [ "$val" -ge 90 ] 2>/dev/null; then
     printf '#[fg=colour196]%s' "$val"
 else
     printf '%s' "$val"
 fi
 EOF
-chmod +x "$TMUX_DIR/mem.sh"
-echo "    Wrote $TMUX_DIR/mem.sh"
+chmod +x "$TMUX_DIR/gpu.sh"
+echo "    Wrote $TMUX_DIR/gpu.sh"
 
 # --------------------------------------------------------------------------
 # ~/.tmux/claude-usage.sh
@@ -709,7 +698,7 @@ fi
 
 echo ""
 echo "Done! Features:"
-echo "  - Status bar: project-colored badge, CPU/MEM, hostname, clock"
+echo "  - Status bar: project-colored badge, CPU/GPU, hostname, clock"
 echo "  - Window tabs: orange highlight when Claude is idle"
 echo "  - Pane headers: git branch (blue) / worktree name (orange)"
 echo "  - Pane headers: orange bg strip when Claude is idle (per-pane)"
