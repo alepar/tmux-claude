@@ -8,7 +8,7 @@ tmux-claude provides tmux project/system presentation plus native Claude Code an
 
 The status bar contains a deterministic project-color badge, hostname, CPU percentage, GPU utilization percentage, an optional coolant temperature, and clock. It refreshes every three seconds. CPU and GPU turn red at 90% or higher. GPU utilization is averaged across all cards, read from `nvidia-smi` when present and otherwise from the AMD `gpu_busy_percent` sysfs entries; it renders `?` when neither source is available.
 
-When an Aquacomputer Octo (hwmon `name` of `octo`) is present, an `H2O:` coolant temperature is shown from the device's first populated `temp*_input`, located by hwmon name rather than index since numbering is not stable across reboots. It turns red at 50C or higher. The segment renders nothing — no dangling label — when no Octo is attached.
+When an Aquacomputer Octo (hwmon `name` of `octo`) is present, an `H2O:` coolant temperature is shown from the device's first populated `temp*_input`, located by hwmon name rather than index since numbering is not stable across reboots. It is cyan normally, orange above 55C, and red above 60C. The segment renders nothing — no dangling label — when no Octo is attached.
 
 tmux retains pane labels and Claude idle highlighting. `pane-label.sh` walks the pane process tree to resolve its working directory, using the retained Claude CWD marker for Claude/node processes. It never detects an agent in order to render agent status.
 

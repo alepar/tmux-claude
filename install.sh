@@ -242,8 +242,8 @@ cat > "$TMUX_DIR/water.sh" << 'EOF'
 # Coolant temperature from an Aquacomputer Octo, first populated sensor.
 # Locates the device by hwmon name (numbering is not stable across reboots).
 # Emits its own colored label plus a trailing space, or nothing when absent —
-# so the status bar has no dangling segment when no Octo is attached. Red at
-# >= 50C.
+# so the status bar has no dangling segment when no Octo is attached. Cyan
+# normally, orange above 55C, red above 60C.
 for name in /sys/class/hwmon/hwmon*/name; do
     [ -e "$name" ] || continue
     [ "$(cat "$name" 2>/dev/null)" = "octo" ] || continue
@@ -253,11 +253,14 @@ for name in /sys/class/hwmon/hwmon*/name; do
         milli=$(cat "$t" 2>/dev/null) || continue
         case "$milli" in ''|*[!0-9]*) continue ;; esac
         val=$(( (milli + 500) / 1000 ))
-        if [ "$val" -ge 50 ]; then
-            printf '#[fg=colour196]H2O:%sC ' "$val"
+        if [ "$val" -gt 60 ]; then
+            color=colour196   # red
+        elif [ "$val" -gt 55 ]; then
+            color=colour208   # orange
         else
-            printf '#[fg=colour81]H2O:%sC ' "$val"
+            color=colour81    # cyan
         fi
+        printf '#[fg=%s]H2O:%sC ' "$color" "$val"
         exit 0
     done
 done
