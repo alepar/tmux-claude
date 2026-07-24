@@ -8,6 +8,7 @@
 #   ~/.tmux.conf               — tmux configuration
 #   ~/.tmux/cpu.sh             — CPU usage for status bar
 #   ~/.tmux/gpu.sh             — GPU utilization for status bar
+#   ~/.tmux/water.sh           — Coolant temperature (Aquacomputer Octo, if present)
 #   ~/.tmux/claude-usage.sh    — Claude subscription usage for its native status line
 #   ~/.tmux/project-color.sh   — Session-hashed color badge
 #   ~/.tmux/pane-label.sh      — Pane header: git branch/worktree + idle indicator
@@ -136,13 +137,14 @@ set -g status-style "bg=colour235,fg=colour248"
 set -g status-left-length 50
 set -g status-left "#(~/.tmux/project-color.sh '#{session_name}')"
 
-# Right: hostname, CPU, GPU, and time (local TZ)
-set -g status-right-length 80
+# Right: hostname, CPU, GPU, coolant temp (if present), and time (local TZ)
+set -g status-right-length 90
 set -g status-right "\
 #[fg=colour243]#h \
 #[fg=colour240]│ \
 #[fg=colour222]CPU:#(~/.tmux/cpu.sh)%% \
 #[fg=colour114]GPU:#(~/.tmux/gpu.sh)%% \
+#(~/.tmux/water.sh)\
 #[fg=colour240]│ \
 #[fg=colour248]%H:%M %Z "
 
@@ -231,6 +233,37 @@ fi
 EOF
 chmod +x "$TMUX_DIR/gpu.sh"
 echo "    Wrote $TMUX_DIR/gpu.sh"
+
+# --------------------------------------------------------------------------
+# ~/.tmux/water.sh
+# --------------------------------------------------------------------------
+cat > "$TMUX_DIR/water.sh" << 'EOF'
+#!/usr/bin/env bash
+# Coolant temperature from an Aquacomputer Octo, first populated sensor.
+# Locates the device by hwmon name (numbering is not stable across reboots).
+# Emits its own colored label plus a trailing space, or nothing when absent —
+# so the status bar has no dangling segment when no Octo is attached. Red at
+# >= 50C.
+for name in /sys/class/hwmon/hwmon*/name; do
+    [ -e "$name" ] || continue
+    [ "$(cat "$name" 2>/dev/null)" = "octo" ] || continue
+    dir=$(dirname "$name")
+    for n in $(seq 1 20); do
+        t="$dir/temp${n}_input"
+        milli=$(cat "$t" 2>/dev/null) || continue
+        case "$milli" in ''|*[!0-9]*) continue ;; esac
+        val=$(( (milli + 500) / 1000 ))
+        if [ "$val" -ge 50 ]; then
+            printf '#[fg=colour196]H2O:%sC ' "$val"
+        else
+            printf '#[fg=colour81]H2O:%sC ' "$val"
+        fi
+        exit 0
+    done
+done
+EOF
+chmod +x "$TMUX_DIR/water.sh"
+echo "    Wrote $TMUX_DIR/water.sh"
 
 # --------------------------------------------------------------------------
 # ~/.tmux/claude-usage.sh
@@ -698,7 +731,7 @@ fi
 
 echo ""
 echo "Done! Features:"
-echo "  - Status bar: project-colored badge, CPU/GPU, hostname, clock"
+echo "  - Status bar: project-colored badge, CPU/GPU, coolant temp, hostname, clock"
 echo "  - Window tabs: orange highlight when Claude is idle"
 echo "  - Pane headers: git branch (blue) / worktree name (orange)"
 echo "  - Pane headers: orange bg strip when Claude is idle (per-pane)"

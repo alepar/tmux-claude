@@ -161,6 +161,7 @@ env HOME="$NO_CODEX_HOME" TMPDIR="$STATE_DIR" PATH="/usr/bin:/bin" \
 TMUX_DIR="$HOME_DIR/.tmux"
 assert_file "$TMUX_DIR/claude-statusline.sh"
 assert_file "$TMUX_DIR/pane-label.sh"
+assert_file "$TMUX_DIR/water.sh"
 assert_no_file "$TMUX_DIR/agent-status.sh"
 assert_no_file "$TMUX_DIR/cleanup-markers.sh"
 assert_no_file "$TMUX_DIR/codex-context-hook.sh"

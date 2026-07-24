@@ -4,7 +4,7 @@ A tmux setup for Claude Code and Codex workflows. tmux shows project and system 
 
 ## Features
 
-**tmux status bar** — project-colored session badge, CPU/GPU usage, hostname, and clock. It does not inspect agent processes or render agent usage.
+**tmux status bar** — project-colored session badge, CPU/GPU usage, optional coolant temp, hostname, and clock. It does not inspect agent processes or render agent usage.
 
 **Codex native status** — the installer safely merges these settings into `~/.codex/config.toml`:
 
@@ -52,6 +52,7 @@ If already inside tmux, run `tmux source ~/.tmux.conf`. The installer backs up a
 | `~/.tmux/claude-cwd-hook.sh` | Tracks Claude CWD changes |
 | `~/.tmux/project-color.sh` | Session color badge |
 | `~/.tmux/cpu.sh`, `~/.tmux/gpu.sh` | System usage |
+| `~/.tmux/water.sh` | Coolant temp (Aquacomputer Octo, if present) |
 | `~/.claude/settings.json` | Merged Claude hooks and native `statusLine` command |
 | `~/.codex/config.toml` | Narrowly merged native Codex `[tui]` settings |
 
